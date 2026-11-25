@@ -1,0 +1,2 @@
+# Airgus (log parsers and rules), installed with --no-deps: only its standard-library core is used
+airgus @ https://github.com/Trickx/Airgus/archive/79d6afd.tar.gz

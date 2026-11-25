@@ -1,0 +1,15 @@
+# local config and data (database, thumbnails)
+/config.json
+/data/
+# python
+**/__pycache__/
+venv/
+.venv/
+.pytest_cache/
+# editors / OS
+.idea/
+.DS_Store
+*.swp
+# local tooling
+.claude/
+.env

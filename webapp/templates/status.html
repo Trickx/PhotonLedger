@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{% block title %}Indexer · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page">
+    <h1>Indexer</h1>
+    <p class="pl-lead">Archiv (nur lesend): <code>{{ archive }}</code></p>
+
+    <div id="indexer-state" hx-get="{{ url_for('main.status_state') }}" hx-trigger="every 5s" hx-swap="innerHTML">
+        {% include "_indexer_state.html" %}
+    </div>
+
+    <div class="pl-tiles">
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='light') }}"><b>{{ counts.get('light', 0)|num }}</b><span>Lights</span></a>
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='flat') }}"><b>{{ counts.get('flat', 0)|num }}</b><span>Flats</span></a>
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='dark') }}"><b>{{ counts.get('dark', 0)|num }}</b><span>Darks</span></a>
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='bias') }}"><b>{{ counts.get('bias', 0)|num }}</b><span>Bias</span></a>
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='intermediate') }}"><b>{{ inter_total|num }}</b>
+            <span>Zwischenergebnisse{% if inter_bad %} · <em class="text-warning">{{ inter_bad|num }} falsch abgelegt</em>{% endif %}</span></a>
+        <a class="pl-tile pl-tile-link" href="{{ url_for('main.files', kind='ignored') }}"><b>{{ ignored|num }}</b><span>Stacks neben Rohdaten</span></a>
+        <div class="pl-tile"><b>{{ pending }}</b><span>Vorschauen offen</span></div>
+    </div>
+
+    <h2 class="pl-h2">Läufe</h2>
+    <table class="table table-sm pl-table">
+        <thead><tr><th>#</th><th>Start</th><th>Ende</th><th>Phase</th><th class="text-end">Gesehen</th><th class="text-end">Gelesen</th><th class="text-end">Fehler</th><th>Meldung</th></tr></thead>
+        <tbody>{% for r in runs %}
+        <tr>
+            <td>{{ r.id }}</td><td class="text-nowrap">{{ r.started|de_date('%d.%m.%Y %H:%M') }}</td>
+            <td class="text-nowrap">{{ r.finished|de_date('%H:%M:%S') if r.finished else 'läuft …' }}</td>
+            <td><span class="badge {% if r.phase == 'done' %}text-bg-success{% elif r.phase == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ r.phase }}</span></td>
+            <td class="text-end">{{ r.files_seen|num }}</td><td class="text-end">{{ r.files_read|num }}</td>
+            <td class="text-end">{{ r.errors }}</td><td>{{ r.message or '' }}</td>
+        </tr>
+        {% else %}<tr><td colspan="8" class="text-body-secondary">Noch kein Lauf.</td></tr>{% endfor %}</tbody>
+    </table>
+
+    {% if frame_errors or version_errors %}
+    <h2 class="pl-h2">Nicht lesbare Dateien</h2>
+    <table class="table table-sm pl-table">
+        <thead><tr><th>Datei</th><th>Fehler</th></tr></thead>
+        <tbody>
+        {% for f in frame_errors %}<tr><td><code>{{ f.path }}</code></td><td>{{ f.error }}</td></tr>{% endfor %}
+        {% for v in version_errors %}<tr><td><code>{{ v.path }}</code></td><td>{{ v.error }}</td></tr>{% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

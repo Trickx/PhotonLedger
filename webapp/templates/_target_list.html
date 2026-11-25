@@ -1,0 +1,15 @@
+{% for t in targets %}
+<a class="pl-target {% if t.id == selected_id %}active{% endif %}"
+   href="{{ url_for('main.target', tid=t.id) }}"
+   hx-get="{{ url_for('main.target', tid=t.id) }}" hx-target="#detail" hx-push-url="true"
+   onclick="document.querySelectorAll('.pl-target.active').forEach(e=>e.classList.remove('active'));this.classList.add('active')">
+    <i class="bi {{ type_icon(t.object_type) }} pl-target-icon" title="{{ t.object_type or 'Objekt' }}"></i>
+    <span class="pl-target-name">
+        <strong>{{ t.name }}</strong>
+        {% if t.common_name %}<small>{{ t.common_name }}</small>{% endif %}
+    </span>
+    <span class="pl-target-hours">{% if t.exposure_s %}{{ t.exposure_s|hours }} h{% else %}–{% endif %}</span>
+</a>
+{% else %}
+<p class="text-body-secondary small px-3 py-2">Keine Ziele gefunden.</p>
+{% endfor %}

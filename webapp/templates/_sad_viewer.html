@@ -1,0 +1,29 @@
+{% set frames = series.frames %}
+<div class="pl-sad-viewer">
+    <div class="pl-sad-controls">
+        <select class="form-select form-select-sm" name="f"
+                hx-get="{{ url_for('main.sad_viewer', sid=sid) }}" hx-include="this, [name=k]" hx-target="closest .pl-sad-viewer" hx-swap="outerHTML"
+                hx-vals='{"k": "{{ kind }}"}'>
+            {% for f in frames %}
+            <option value="{{ f.id }}" {% if f.id == frame.id %}selected{% endif %}>
+                {{ f.time_utc|de_date('%H:%M') }} · {{ f.side or '' }} · FWHM {{ '%.2f'|format(f.fwhm_center)|replace('.', ',') if f.fwhm_center else '–' }} px · {{ f.name }}</option>
+            {% endfor %}
+        </select>
+        <div class="btn-group btn-group-sm flex-wrap" role="group">
+            {% for k, lbl in map_labels.items() %}{% if frame.maps.get(k) %}
+            <button type="button" class="btn {% if k == kind %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+                    hx-get="{{ url_for('main.sad_viewer', sid=sid, f=frame.id, k=k) }}" hx-target="closest .pl-sad-viewer" hx-swap="outerHTML">{{ lbl }}</button>
+            {% endif %}{% endfor %}
+        </div>
+    </div>
+    {% set k = kind if frame.maps.get(kind) else (frame.maps.keys()|list|first) %}
+    {% if k %}
+    <a href="{{ url_for('main.sad_map', fid=frame.id, kind=k, size='full') }}" target="_blank" title="Größer öffnen">
+        <img class="pl-sad-map" src="{{ url_for('main.sad_map', fid=frame.id, kind=k) }}" alt="{{ map_labels.get(k, k) }} – {{ frame.name }}">
+    </a>
+    <p class="pl-note">{{ frame.name }}{% if frame.altitude %} · Höhe {{ '%.0f'|format(frame.altitude) }}°{% endif %}{% if frame.stars %} · {{ frame.stars }} Sterne{% endif %}
+        {% if frame.tilt_rel is not none %} · Verkippung {{ '%.2f'|format(frame.tilt_rel)|replace('.', ',') }}{% endif %}
+        {% if frame.ellipticity is not none %} · Elliptizität {{ '%.2f'|format(frame.ellipticity)|replace('.', ',') }}{% endif %}
+        · Karten von StarAberrationDiagnostics (beim ersten Aufruf verkleinert)</p>
+    {% else %}<p class="text-body-secondary">Für dieses Light wurden keine Karten gespeichert.</p>{% endif %}
+</div>

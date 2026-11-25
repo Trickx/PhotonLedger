@@ -1,0 +1,176 @@
+{% extends "layout.html" %}
+{% block title %}Rigs · Photon Ledger{% endblock %}
+{% macro num(v, d=0) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% endif %}{% endmacro %}
+{% macro edit_delete(kind, obj) %}
+    <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', **{kind: obj.id}) }}#{{ kind }}-form">Bearbeiten</a>
+    <form class="d-inline" method="post" action="{{ url_for('main.delete_component', kind=kind, oid=obj.id) }}"
+          onsubmit="return confirm('„{{ obj.name }}“ löschen?')"><button class="btn btn-sm btn-link text-danger p-0 ms-2">Löschen</button></form>
+{% endmacro %}
+{% block content %}
+<div class="pl-page">
+    <a class="pl-back" href="{{ url_for('main.equipment') }}"><i class="bi bi-arrow-left"></i> Ausrüstung</a>
+    <h1>Rigs verwalten</h1>
+    <p class="pl-lead">Ein Rig besteht aus Kamera, Optik (Teleskop, Festbrennweite oder Zoomobjektiv) und optional
+        Flattener, Reducer oder Extender. Aufnahmen werden automatisch einem Rig zugeordnet, wenn Kamera
+        (Header <code>INSTRUME</code>) und Brennweite passen; abweichend lässt sich unter
+        <a href="{{ url_for('main.equipment') }}#datasets">Ausrüstung</a> oder auf der Session-Seite zuordnen.</p>
+
+    <!-- ===================================================== rigs -->
+    <section class="pl-section" id="rigs">
+        <h2>Rigs <span class="pl-count">{{ rigs|length }}</span></h2>
+
+        <div class="pl-seeing">Bewertung der Abtastung bei Seeing
+            {% for s in (1.5, 2.5, 4.0) %}<a class="btn btn-sm {% if seeing == s %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('main.rigs_page', seeing=s) }}#rigs">{{ num(s, 1) }}″</a>{% endfor %}
+        </div>
+        <div class="pl-rig-cards">
+        {% for r in rigs %}
+            {% set lo, hi = r.focal_range %}{% set fr = r.f_ratio_range %}
+            {% set s_lo, s_hi = r.scale_at(hi), r.scale_at(lo) %}
+            <div class="pl-rig-card {% if not r.active %}pl-inactive{% endif %}">
+                <div class="pl-rig-head">
+                    <strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge text-bg-secondary">inaktiv</span>{% endif %}
+                    <span class="ms-auto">
+                        <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rig-form">Bearbeiten</a>
+                        <form class="d-inline" method="post" action="{{ url_for('main.delete_component', kind='rig', oid=r.id) }}"
+                              onsubmit="return confirm('Rig „{{ r.name }}“ löschen? Zuordnungen zu Aufnahmen gehen verloren.')">
+                            <button class="btn btn-sm btn-link text-danger p-0 ms-2">Löschen</button></form>
+                    </span>
+                </div>
+                <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}</div>
+                <dl class="pl-rig-specs">
+                    <dt>Brennweite</dt><dd>{{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm</dd>
+                    <dt>Öffnungsverh.</dt><dd>{% if fr %}f/{{ num(fr[0], 1) }}{% if fr[1] != fr[0] %}–{{ num(fr[1], 1) }}{% endif %}{% else %}–{% endif %}</dd>
+                    <dt>Bildmaßstab</dt><dd>{% if s_lo %}{{ num(s_lo, 2) }}{% if s_hi != s_lo %}–{{ num(s_hi, 2) }}{% endif %}″/px{% else %}<span class="text-body-secondary">Pixelgröße fehlt</span>{% endif %}</dd>
+                    <dt>Bildfeld</dt><dd>{% set fv = r.fov_at(lo) %}{% if fv %}{{ num(fv[0]) }}′ × {{ num(fv[1]) }}′{% if hi != lo %}{% set fv2 = r.fov_at(hi) %} … {{ num(fv2[0]) }}′ × {{ num(fv2[1]) }}′{% endif %}{% else %}–{% endif %}</dd>
+                    {% if s_lo %}{% set px_fwhm = seeing / s_lo %}
+                    <dt>Abtastung</dt><dd>{{ num(px_fwhm, 1) }} px/FWHM{% if hi != lo %}–{{ num(seeing / s_hi, 1) }}{% endif %}
+                        <span class="pl-sampling {{ 'under' if px_fwhm < 1.5 else 'over' if px_fwhm > 3.5 else 'good' }}">{{ 'Unterabtastung' if px_fwhm < 1.5 else 'Überabtastung' if px_fwhm > 3.5 else 'gut' }}</span></dd>{% endif %}
+                </dl>
+            </div>
+        {% else %}<p class="text-body-secondary">Noch keine Rigs.</p>{% endfor %}
+        </div>
+        {% set r = cur.rig %}
+        <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_rig') }}" id="rig-form">
+            <h3 class="pl-form-title">{{ 'Rig bearbeiten' if r else 'Neues Rig' }}</h3>
+            {% if r %}<input type="hidden" name="id" value="{{ r.id }}">{% endif %}
+            <div class="pl-form-grid">
+                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ r.name if r else '' }}" placeholder="z. B. Skywatcher + 550D"></label>
+                <label>Kamera<select class="form-select form-select-sm" name="camera_id" required>
+                    <option value="">– wählen –</option>
+                    {% for c in cameras %}<option value="{{ c.id }}" {% if r and r.camera_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                </select></label>
+                <label>Optik<select class="form-select form-select-sm" name="optic_id" required>
+                    <option value="">– wählen –</option>
+                    {% for o in optics %}<option value="{{ o.id }}" {% if r and r.optic_id == o.id %}selected{% endif %}>{{ o.name }} ({{ num(o.focal_mm) }}{% if o.focal_max_mm %}–{{ num(o.focal_max_mm) }}{% endif %} mm)</option>{% endfor %}
+                </select></label>
+                <label>Flattener / Reducer<select class="form-select form-select-sm" name="corrector_id">
+                    <option value="">keiner</option>
+                    {% for c in correctors %}<option value="{{ c.id }}" {% if r and r.corrector_id == c.id %}selected{% endif %}>{{ c.name }} (×{{ num(c.factor, 2) }})</option>{% endfor %}
+                </select></label>
+                <label class="pl-check"><input type="checkbox" name="active" value="1" {% if not r or r.active %}checked{% endif %}> aktiv</label>
+            </div>
+            <div class="pl-form-actions">
+                <button class="btn btn-sm btn-primary">{{ 'Rig aktualisieren' if r else 'Rig anlegen' }}</button>
+                {% if r %}<a class="btn btn-sm btn-link" href="{{ url_for('main.rigs_page') }}#rigs">Abbrechen</a>{% endif %}
+                {% if not cameras or not optics %}<span class="pl-note">Zuerst Kamera und Optik anlegen (weiter unten).</span>{% endif %}
+            </div>
+        </form>
+    </section>
+
+    <!-- ===================================================== cameras -->
+    <section class="pl-section" id="cameras">
+        <h2>Kameras <span class="pl-count">{{ cameras|length }}</span></h2>
+        {% if new_header_cams %}
+        <div class="alert alert-info py-2 small d-flex flex-wrap align-items-center gap-2">
+            In den FITS-Headern gefunden, aber noch nicht angelegt: {{ new_header_cams|map(attribute='name')|join(', ') }}
+            <form method="post" action="{{ url_for('main.import_cameras') }}" class="ms-auto">
+                <button class="btn btn-sm btn-outline-primary">Übernehmen (mit Pixelgröße und Bildgröße)</button></form>
+        </div>
+        {% endif %}
+        <table class="table table-sm pl-table align-middle">
+            <thead><tr><th>Name</th><th>Header</th><th class="text-end">Pixel</th><th class="text-end">Bildgröße</th><th class="text-end">Sensor</th><th></th></tr></thead>
+            <tbody>{% for c in cameras %}
+            <tr><td>{{ c.name }}</td><td><code>{{ c.header_name or '–' }}</code></td>
+                <td class="text-end">{{ num(c.pixel_um, 2) or '–' }} µm</td>
+                <td class="text-end">{% if c.width_px %}{{ c.width_px }} × {{ c.height_px }}{% else %}–{% endif %}</td>
+                <td class="text-end">{% set sm = c.sensor_mm %}{% if sm %}{{ num(sm[0], 1) }} × {{ num(sm[1], 1) }} mm{% else %}–{% endif %}</td>
+                <td class="text-end text-nowrap">{{ edit_delete('camera', c) }}</td></tr>
+            {% endfor %}</tbody>
+        </table>
+        {% set c = cur.camera %}
+        <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_camera') }}" id="camera-form">
+            <h3 class="pl-form-title">{{ 'Kamera bearbeiten' if c else 'Neue Kamera' }}</h3>
+            {% if c %}<input type="hidden" name="id" value="{{ c.id }}">{% endif %}
+            <div class="pl-form-grid">
+                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ c.name if c else '' }}" placeholder="z. B. Canon EOS 550D"></label>
+                <label>Name im Header (INSTRUME)<input class="form-control form-control-sm" name="header_name" value="{{ (c.header_name or '') if c else '' }}" placeholder="für die automatische Zuordnung"></label>
+                <label>Pixelgröße (µm)<input class="form-control form-control-sm" name="pixel_um" inputmode="decimal" value="{{ num(c.pixel_um, 2) if c else '' }}"></label>
+                <label>Breite (px)<input class="form-control form-control-sm" name="width_px" inputmode="numeric" value="{{ (c.width_px or '') if c else '' }}"></label>
+                <label>Höhe (px)<input class="form-control form-control-sm" name="height_px" inputmode="numeric" value="{{ (c.height_px or '') if c else '' }}"></label>
+            </div>
+            <div class="pl-form-actions"><button class="btn btn-sm btn-primary">{{ 'Kamera aktualisieren' if c else 'Kamera hinzufügen' }}</button>
+                {% if c %}<a class="btn btn-sm btn-link" href="{{ url_for('main.rigs_page') }}#cameras">Abbrechen</a>{% endif %}</div>
+        </form>
+    </section>
+
+    <!-- ===================================================== optics -->
+    <section class="pl-section" id="optics">
+        <h2>Optiken <span class="pl-count">Teleskope und Objektive · {{ optics|length }}</span></h2>
+        <table class="table table-sm pl-table align-middle">
+            <thead><tr><th>Name</th><th>Art</th><th class="text-end">Brennweite</th><th class="text-end">Öffnung</th><th class="text-end">Blende</th><th></th></tr></thead>
+            <tbody>{% for o in optics %}
+            <tr><td>{{ o.name }}</td><td>{{ optic_kinds[o.kind] }}</td>
+                <td class="text-end">{{ num(o.focal_mm) }}{% if o.focal_max_mm %}–{{ num(o.focal_max_mm) }}{% endif %} mm</td>
+                <td class="text-end">{% if o.aperture_mm %}{{ num(o.aperture_mm) }} mm{% else %}–{% endif %}</td>
+                <td class="text-end">{% if o.aperture_mm %}f/{{ num(o.focal_mm / o.aperture_mm, 1) }}{% elif o.f_number %}f/{{ num(o.f_number, 1) }}{% if o.f_number_max %}–{{ num(o.f_number_max, 1) }}{% endif %}{% else %}–{% endif %}</td>
+                <td class="text-end text-nowrap">{{ edit_delete('optic', o) }}</td></tr>
+            {% endfor %}</tbody>
+        </table>
+        {% set o = cur.optic %}
+        <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_optic') }}" id="optic-form">
+            <h3 class="pl-form-title">{{ 'Optik bearbeiten' if o else 'Neue Optik' }}</h3>
+            {% if o %}<input type="hidden" name="id" value="{{ o.id }}">{% endif %}
+            <div class="pl-form-grid">
+                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ o.name if o else '' }}" placeholder="z. B. Canon EF 70-300mm L IS USM"></label>
+                <label>Art<select class="form-select form-select-sm" name="kind" onchange="this.form.dataset.kind=this.value">
+                    {% for k, lbl in optic_kinds.items() %}<option value="{{ k }}" {% if o and o.kind == k %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+                </select></label>
+                <label>Brennweite (mm)<span class="pl-zoom-only"> – kürzeste</span><input class="form-control form-control-sm" name="focal_mm" required inputmode="decimal" value="{{ num(o.focal_mm) if o else '' }}"></label>
+                <label class="pl-zoom-only">Längste Brennweite (mm)<input class="form-control form-control-sm" name="focal_max_mm" inputmode="decimal" value="{{ num(o.focal_max_mm) if o and o.focal_max_mm else '' }}"></label>
+                <label>Öffnung (mm)<input class="form-control form-control-sm" name="aperture_mm" inputmode="decimal" value="{{ num(o.aperture_mm) if o and o.aperture_mm else '' }}" placeholder="Teleskope"></label>
+                <label>Blende f/<span class="pl-zoom-only"> – kürzeste</span><input class="form-control form-control-sm" name="f_number" inputmode="decimal" value="{{ num(o.f_number, 1) if o and o.f_number else '' }}" placeholder="Objektive"></label>
+                <label class="pl-zoom-only">Blende f/ – längste<input class="form-control form-control-sm" name="f_number_max" inputmode="decimal" value="{{ num(o.f_number_max, 1) if o and o.f_number_max else '' }}"></label>
+            </div>
+            <div class="pl-form-actions"><button class="btn btn-sm btn-primary">{{ 'Optik aktualisieren' if o else 'Optik hinzufügen' }}</button>
+                {% if o %}<a class="btn btn-sm btn-link" href="{{ url_for('main.rigs_page') }}#optics">Abbrechen</a>{% endif %}</div>
+        </form>
+        <script>(() => { const f = document.getElementById('optic-form'); f.dataset.kind = f.kind.value; })();</script>
+    </section>
+
+    <!-- ===================================================== correctors -->
+    <section class="pl-section" id="correctors">
+        <h2>Flattener, Reducer, Extender <span class="pl-count">{{ correctors|length }}</span></h2>
+        <table class="table table-sm pl-table align-middle">
+            <thead><tr><th>Name</th><th>Art</th><th class="text-end">Faktor</th><th></th></tr></thead>
+            <tbody>{% for k in correctors %}
+            <tr><td>{{ k.name }}</td><td>{{ corrector_kinds[k.kind] }}</td><td class="text-end">×{{ num(k.factor, 2) }}</td>
+                <td class="text-end text-nowrap">{{ edit_delete('corrector', k) }}</td></tr>
+            {% else %}<tr><td colspan="4" class="text-body-secondary">Keine.</td></tr>{% endfor %}</tbody>
+        </table>
+        {% set k = cur.corrector %}
+        <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_corrector') }}" id="corrector-form">
+            <h3 class="pl-form-title">{{ 'Bearbeiten' if k else 'Neuer Flattener / Reducer / Extender' }}</h3>
+            {% if k %}<input type="hidden" name="id" value="{{ k.id }}">{% endif %}
+            <div class="pl-form-grid">
+                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ k.name if k else '' }}" placeholder="z. B. Skywatcher Komakorrektor"></label>
+                <label>Art<select class="form-select form-select-sm" name="kind">
+                    {% for kk, lbl in corrector_kinds.items() %}<option value="{{ kk }}" {% if k and k.kind == kk %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+                </select></label>
+                <label>Faktor<input class="form-control form-control-sm" name="factor" inputmode="decimal" value="{{ num(k.factor, 2) if k else '1,00' }}" title="1,00 = Flattener, < 1 Reducer, > 1 Extender"></label>
+            </div>
+            <div class="pl-form-actions"><button class="btn btn-sm btn-primary">{{ 'Aktualisieren' if k else 'Hinzufügen' }}</button>
+                {% if k %}<a class="btn btn-sm btn-link" href="{{ url_for('main.rigs_page') }}#correctors">Abbrechen</a>{% endif %}</div>
+        </form>
+    </section>
+</div>
+{% endblock %}

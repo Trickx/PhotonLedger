@@ -1,0 +1,101 @@
+{% extends "layout.html" %}
+{% block title %}Ausrüstung · Photon Ledger{% endblock %}
+{% macro num(v, d=0) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% endif %}{% endmacro %}
+{% block content %}
+<div class="pl-page">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        <h1 class="me-auto">Ausrüstung</h1>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.rigs_page') }}"><i class="bi bi-tools"></i> Rigs verwalten</a>
+    </div>
+
+    <!-- ===================================================== rigs -->
+    <h2 class="pl-h2" id="rig-stats">Rigs</h2>
+    {% if rig_stats %}
+    <div class="pl-rig-stats">
+    {% for st in rig_stats %}{% set r = st.rig %}{% set lo, hi = r.focal_range %}
+        <div class="pl-rig-stat {% if not r.active %}pl-inactive{% endif %}">
+            <div class="pl-rig-head"><strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge text-bg-secondary">inaktiv</span>{% endif %}
+                <a class="ms-auto btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rigs">Bearbeiten</a></div>
+            <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}
+                · {{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm{% set s = r.scale_at(lo) %}{% if s %} · {{ num(r.scale_at(hi), 2) }}{% if hi != lo %}–{{ num(s, 2) }}{% endif %}″/px{% endif %}</div>
+            <div class="pl-total"><span>{{ st.seconds|hours }}</span> Stunden</div>
+            <div class="pl-mini">
+                <div><b>{{ st.n_targets }}</b><span>Ziele</span></div>
+                <div><b>{{ st.n_sessions }}</b><span>Sessions</span></div>
+                <div><b>{{ st.lights|num }}</b><span>Lights</span></div>
+                <div><b>{% if st.fwhm %}{{ num(st.fwhm, 1) }}″{% else %}–{% endif %}</b><span title="Median der FWHM Bildmitte aus StarAberrationDiagnostics">FWHM (SAD)</span></div>
+            </div>
+            {% if st.seconds %}
+            <div class="pl-note">{{ st.first|de_date('%m/%Y') }}{% if st.last and st.first and st.last != st.first %} – {{ st.last|de_date('%m/%Y') }}{% endif %}
+                {% if st.focals|length > 1 or hi != lo %} · Brennweiten {{ st.focals|join(', ') }} mm{% endif %}
+                {% if 'auto' in st.how %} · <span title="über Kamera und Brennweite erkannt">automatisch zugeordnet</span>{% endif %}</div>
+            {% set ymax = st.years|map(attribute=1)|max %}
+            {% for y, sec in st.years %}
+            <div class="pl-bar-row"><span class="pl-bar-label">{{ y }}</span>
+                <div class="pl-bar"><div style="width: {{ 100 * sec / ymax }}%"></div></div><span class="pl-bar-value">{{ sec|hours }} h</span></div>
+            {% endfor %}
+            {% if st.filters %}<div class="pl-note">Filter: {% for f, sec in st.filters %}{{ f }} {{ sec|hours }} h{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+            {% else %}<p class="pl-note">Noch keine Aufnahmen zugeordnet.</p>{% endif %}
+        </div>
+    {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-body-secondary">Noch keine Rigs angelegt. Unter <a href="{{ url_for('main.rigs_page') }}">Rigs verwalten</a> lassen sich
+        Kameras (auch direkt aus den FITS-Headern), Optiken und Flattener/Reducer anlegen und zu Rigs kombinieren.</p>
+    {% endif %}
+    {% if unassigned and rig_stats %}
+    <p class="pl-note mt-2"><i class="bi bi-exclamation-triangle text-warning"></i>
+        {{ unassigned|length }} Datensatz/-sätze mit zusammen {{ unassigned|sum(attribute='seconds')|hours }} h sind keinem Rig zugeordnet – siehe Tabelle unten.</p>
+    {% endif %}
+
+    <!-- ===================================================== cameras -->
+    <h2 class="pl-h2">Kameras (aus den Headern)</h2>
+    <div class="pl-tiles pl-tiles-wide">
+        {% for cam, c in cameras %}
+        <div class="pl-tile"><b>{{ c.seconds|hours }} h</b><span>{{ cam or 'unbekannt' }} · {{ c.lights|num }} Lights</span></div>
+        {% endfor %}
+    </div>
+
+    <!-- ===================================================== data sets -->
+    <h2 class="pl-h2" id="datasets">Datensätze (Kamera × Brennweite)</h2>
+    <p class="pl-lead">Aus den Headern der Lights. Brennweiten einer Kamera, die weniger als
+        {{ (tolerance * 100)|round(1)|string|replace('.0', '')|replace('.', ',') }} % voneinander abweichen, zählen als dieselbe
+        (<code>FOCAL_TOLERANCE</code>). Die Rig-Zuordnung gilt für alle Sessions dieses Datensatzes; einzelne Sessions lassen sich auf ihrer Seite abweichend zuordnen.</p>
+    <div class="table-responsive">
+    <table class="table table-sm pl-table align-middle">
+        <thead><tr><th>Brennweite</th><th>Kamera</th><th>Rig</th>
+            <th class="text-end" title="Bildmaßstab aus Pixelgröße (XPIXSZ), Binning und Brennweite">″/px</th><th class="text-end">Bildfeld</th>
+            <th class="text-end">Ziele</th><th class="text-end">Sessions</th><th class="text-end">Lights</th>
+            <th class="text-end">Stunden</th><th>Zeitraum</th></tr></thead>
+        <tbody>
+        {% for d in datasets %}
+        <tr>
+            <td>{% if d.focal %}<a href="{{ url_for('main.index', focal=d.focal, camera=d.camera) }}">{{ d.focal }} mm</a>{% else %}–{% endif %}</td>
+            <td>{{ d.camera or '–' }}{% if d.telescope %}<br><small class="text-body-secondary">{{ d.telescope }}</small>{% endif %}</td>
+            <td>
+                {% if all_rigs and d.focal %}
+                <form class="pl-assign" method="post" action="{{ url_for('main.assign_dataset') }}">
+                    <input type="hidden" name="camera" value="{{ d.camera or '' }}"><input type="hidden" name="focal" value="{{ d.focal or '' }}">
+                    <select class="form-select form-select-sm {% if not d.rig %}border-warning{% endif %}" name="rig_id" onchange="this.form.submit()">
+                        <option value="">{% if d.how == 'ambiguous' %}– mehrdeutig, bitte wählen –{% else %}– kein Rig –{% endif %}</option>
+                        {% for r in all_rigs %}<option value="{{ r.id }}" {% if d.rig and d.rig.id == r.id %}selected{% endif %}>{{ r.name }}{% if r in d.suggestions %} ✓{% endif %}</option>{% endfor %}
+                    </select>
+                </form>
+                {% if d.rig %}<span class="pl-how">{{ {'auto': 'automatisch', 'manual': 'manuell'}.get(d.how, d.how) }}</span>{% endif %}
+                {% else %}–{% endif %}
+            </td>
+            <td class="text-end">{{ '%.2f'|format(d.scale)|replace('.', ',') if d.scale else '–' }}</td>
+            <td class="text-end text-nowrap">{% if d.fov_w %}{{ '%.0f'|format(d.fov_w) }}′ × {{ '%.0f'|format(d.fov_h) }}′{% else %}–{% endif %}</td>
+            <td class="text-end">{{ d.targets }}</td>
+            <td class="text-end">{{ d.sessions }}</td>
+            <td class="text-end">{{ d.lights|num }}</td>
+            <td class="text-end">{{ d.seconds|hours }}</td>
+            <td class="text-nowrap">{{ d.first|de_date('%m/%Y') }}{% if d.last and d.first and d.last.strftime('%Y%m') != d.first.strftime('%Y%m') %} – {{ d.last|de_date('%m/%Y') }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="pl-note">✓ = passt laut Kamera und Brennweite zum Rig.</p>
+</div>
+{% endblock %}

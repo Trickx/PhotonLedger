@@ -1,0 +1,199 @@
+{% extends "layout.html" %}
+{% block title %}{{ t.name if t else '' }} {{ s.label or s.date|de_date }} · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page">
+    {% if t %}<a class="pl-back" href="{{ url_for('main.target', tid=t.id) }}"><i class="bi bi-arrow-left"></i> {{ t.name }}{% if t.common_name %} · {{ t.common_name }}{% endif %}</a>{% endif %}
+    <h1>Session {{ s.date|de_date }}</h1>
+    <p class="pl-lead"><span class="text-body-secondary">Ordner:</span> <code class="pl-path">{{ archive_path.rstrip('/') }}/{{ s.root }}</code>{% if s.nights|length > 1 %} · {{ s.nights|length }} Nächte{% endif %}
+        {% if s.duplicate_of %}<br><span class="text-warning">Kopie von {{ s.duplicate_of }}</span>{% endif %}</p>
+
+    <div class="pl-tiles">
+        <div class="pl-tile"><b>{{ s.exposure_s|hours }} h</b><span>Belichtung</span></div>
+        <div class="pl-tile"><b>{{ s.lights }}</b><span>Lights{% if s.rejected %} · {{ s.rejected }} aussortiert{% endif %}</span></div>
+        <div class="pl-tile"><b>{{ s.flats or '–' }} / {{ s.darks or '–' }} / {{ s.biases or '–' }}</b><span>Flats / Darks / Bias</span></div>
+        {% for row in rig_rows %}{% set d = row.d %}
+        <div class="pl-tile"><b>{{ d.focal or '?' }} mm</b><span>{{ d.camera or '?' }}{% if d.scale %} · {{ '%.2f'|format(d.scale)|replace('.', ',') }}″/px{% endif %}
+            {% if row.rig %}<br><i class="bi bi-tools"></i> {{ row.rig.name }}{% endif %}</span></div>
+        {% endfor %}
+    </div>
+    {% if all_rigs %}
+    <form class="pl-assign mt-2" method="post" action="{{ url_for('main.session_rig', sid=s.id) }}">
+        <label class="pl-note" for="rig_id">Rig dieser Session:</label>
+        <select id="rig_id" class="form-select form-select-sm w-auto" name="rig_id" onchange="this.form.submit()">
+            {% set cur = rig_rows[0].rig if rig_rows and rig_rows[0].how == 'session' else none %}
+            <option value="">{% if rig_rows and rig_rows[0].rig and rig_rows[0].how != 'session' %}wie Datensatz ({{ rig_rows[0].rig.name }}){% else %}wie Datensatz (kein Rig){% endif %}</option>
+            {% for r in all_rigs %}<option value="{{ r.id }}" {% if cur and cur.id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+        </select>
+        {% if cur %}<span class="pl-how">abweichend für diese Session festgelegt</span>{% endif %}
+    </form>
+    {% endif %}
+
+    {% if night %}{% set na = night.a %}{% set ns = night.st %}
+    <section class="pl-section">
+        <details id="night" class="pl-phd" hx-get="{{ url_for('main.session_night', sid=s.id) }}" hx-trigger="toggle once" hx-target="find .pl-phd-body">
+            <summary>
+                <span class="pl-phd-title"><i class="bi bi-journal-text"></i> Nachtprotokoll ({{ na.logs|selectattr('kind', 'in', ['asiair', 'nina'])|map(attribute='kind')|unique|map('upper')|join(' + ')|replace('ASIAIR', 'ASIAIR')|replace('NINA', 'N.I.N.A.') }})</span>
+                <span class="pl-phd-kpi"><i class="pl-dot pl-dot-{{ ns.status }}"></i>
+                    {% if ns.status == 'error' %}{{ na.alerts|selectattr('level', 'ge', 2)|list|length }} schwere Meldung(en){% else %}keine schweren Meldungen{% endif %}
+                    {% set w = na.alerts|selectattr('level', 'lt', 2)|list|length %}{% if w %} · {{ w }} Warnung(en){% endif %}</span>
+                <span class="pl-phd-kpi">{{ na.summary.exposures }} Belichtungen · {{ na.summary.flips_ok }}/{{ na.summary.flips }} Flips{% if na.summary.targets %} · {{ na.summary.targets|join(', ') }}{% endif %}</span>
+                <span class="pl-phd-open">Details anzeigen</span>
+            </summary>
+            <div class="pl-phd-body"><p class="pl-note"><span class="spinner-border spinner-border-sm"></span> wird geladen …</p></div>
+        </details>
+    </section>
+    {% endif %}
+
+    {% if guiding %}{% set gs = guiding %}
+    <section class="pl-section">
+        <details id="guiding" class="pl-phd" hx-get="{{ url_for('main.session_guiding', sid=s.id) }}" hx-trigger="toggle once" hx-target="find .pl-phd-body">
+            <summary>
+                <span class="pl-phd-title"><i class="bi bi-crosshair"></i> Guiding (PHD2)</span>
+                <span class="pl-phd-kpi"><b>{{ '%.2f'|format(gs.rms_total)|replace('.', ',') if gs.rms_total is not none else '–' }}″</b> RMS gesamt</span>
+                <span class="pl-phd-kpi">RA {{ '%.2f'|format(gs.rms_ra)|replace('.', ',') if gs.rms_ra is not none else '–' }}″ · Dec {{ '%.2f'|format(gs.rms_dec)|replace('.', ',') if gs.rms_dec is not none else '–' }}″</span>
+                <span class="pl-phd-kpi">{{ gs.duration|duration }} geführt · {{ gs.dithers }} Dither{% if gs.settle_failed %} · <span class="text-warning">{{ gs.settle_failed }}× Settling fehlgeschlagen</span>{% endif %}</span>
+                <span class="pl-phd-open">Graph anzeigen</span>
+            </summary>
+            <p class="pl-note mt-2">{{ gs.camera or 'Guiding-Kamera' }}{% if gs.scale %} · {{ '%.2f'|format(gs.scale)|replace('.', ',') }}″/px{% endif %}{% if gs.exposure %} · {{ '%g'|format(gs.exposure) }} ms{% endif %}
+                · {{ gs.sections|length }} Abschnitt(e) · Log: {% for p in gs.logs %}<code>{{ p }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+            <div class="pl-phd-body"><p class="pl-note"><span class="spinner-border spinner-border-sm"></span> Graph wird geladen …</p></div>
+        </details>
+    </section>
+    {% endif %}
+
+    {% if wbpp %}{% set ws = wbpp.status or {'status': 'none', 'reasons': [], 'notes': []} %}{% set wbpp_runs = wbpp.runs %}
+    <section class="pl-section">
+        <details id="wbpp" class="pl-phd">
+            <summary>
+                <span class="pl-phd-title"><i class="bi bi-stack"></i> WBPP-Läufe (PixInsight)</span>
+                <span class="pl-phd-kpi"><i class="pl-dot pl-dot-{{ ws.status }}"></i>
+                    {% if not wbpp.contains_session %}diese Session ist in keinem Lauf{% elif ws.status == 'error' %}{{ ws.reasons|length }} Fehler{% else %}keine Fehler{% endif %}</span>
+                {% if wbpp.contains_session %}<span class="pl-phd-kpi">{{ wbpp_runs[0].session_in_stack }} von {{ wbpp.session_lights }} Lights dieser Session im neuesten Stack</span>{% endif %}
+                <span class="pl-phd-kpi">{{ wbpp_runs|length }} Lauf/Läufe · zuletzt {{ wbpp_runs[0].run.started|de_date('%d.%m.%Y') }}</span>
+                <span class="pl-phd-open">Details anzeigen</span>
+            </summary>
+            <div class="mt-2">
+                {% if not wbpp.contains_session %}<p class="pl-note">Keiner der {{ wbpp.total }} WBPP-Läufe des Ziels enthält Lights dieser Session – gezeigt werden alle Läufe des Ziels.</p>
+                {% elif wbpp.total > wbpp_runs|length %}<p class="pl-note">{{ wbpp_runs|length }} von {{ wbpp.total }} WBPP-Läufen des Ziels enthalten Lights dieser Session.</p>{% endif %}
+                {% for r in ws.reasons %}<div class="text-danger small">{{ r }}</div>{% endfor %}
+                {% include "_wbpp_runs.html" %}
+            </div>
+        </details>
+    </section>
+    {% endif %}
+
+    {% if not blocks %}
+    <section class="pl-section">
+        <h2>Optik-Diagnose</h2>
+        <p class="text-body-secondary">Für diese Session gibt es keine Auswertung von StarAberrationDiagnostics
+            (Ordner <code>Lights/SAD</code> mit <code>StarAberrationSeries.csv</code>).</p>
+    </section>
+    {% endif %}
+
+    {% for b in blocks %}{% set sr = b.series %}{% set sm = b.summary %}
+    <section class="pl-section">
+        <details id="{{ 'sad' if loop.first else 'sad-' ~ loop.index }}" class="pl-phd pl-sad">
+        <summary>
+            <span class="pl-phd-title"><i class="bi bi-bullseye"></i> Optik-Diagnose (StarAberrationDiagnostics{% if sr.script %} {{ sr.script }}{% endif %}{% if sr.created %} · {{ sr.created[:10] }}{% endif %})</span>
+            <span class="pl-phd-kpi"><i class="pl-dot pl-dot-{{ sad_status.status }}"></i>
+                FWHM <b>{% if sm.fwhm_center_arcsec %}{{ '%.1f'|format(sm.fwhm_center_arcsec)|replace('.', ',') }}″{% elif sm.fwhm_center %}{{ '%.2f'|format(sm.fwhm_center)|replace('.', ',') }} px{% else %}–{% endif %}</b></span>
+            <span class="pl-phd-kpi">Rand/Mitte {{ '%.2f'|format(sm.ratio)|replace('.', ',') if sm.ratio else '–' }}
+                · Verkippung {{ '%.2f'|format(sm.tilt)|replace('.', ',') if sm.tilt is not none else '–' }}
+                · ε {{ '%.2f'|format(sm.ellipticity)|replace('.', ',') if sm.ellipticity is not none else '–' }}</span>
+            <span class="pl-phd-open">Details anzeigen</span>
+        </summary>
+        <div class="mt-2">
+        {% if sr.error %}<div class="alert alert-danger small py-2">SAD-Daten nicht lesbar: {{ sr.error }}</div>{% endif %}
+        <div class="pl-tiles">
+            <div class="pl-tile"><b>{% if sm.fwhm_center_arcsec %}{{ '%.1f'|format(sm.fwhm_center_arcsec)|replace('.', ',') }}″{% elif sm.fwhm_center %}{{ '%.2f'|format(sm.fwhm_center)|replace('.', ',') }} px{% else %}–{% endif %}</b>
+                <span>FWHM Mitte{% if sm.fwhm_center %} ({{ '%.2f'|format(sm.fwhm_center)|replace('.', ',') }} px){% endif %}</span></div>
+            <div class="pl-tile"><b>{% if sm.ratio %}{{ '%.2f'|format(sm.ratio)|replace('.', ',') }}{% else %}–{% endif %}</b><span>FWHM Rand / Mitte</span></div>
+            <div class="pl-tile"><b>{% if sm.tilt is not none %}{{ '%.2f'|format(sm.tilt)|replace('.', ',') }}{% else %}–{% endif %}</b>
+                <span>Verkippung{% if sm.tilt_dir is not none %} · Richtung {{ '%.0f'|format(sm.tilt_dir) }}°{% endif %}</span></div>
+            <div class="pl-tile"><b>{% if sm.ellipticity is not none %}{{ '%.2f'|format(sm.ellipticity)|replace('.', ',') }}{% else %}–{% endif %}</b><span>Elliptizität (Nachführung)</span></div>
+            <div class="pl-tile"><b>{{ '%.0f'|format(sm.stars) if sm.stars else '–' }}</b><span>Sterne (Median)</span></div>
+        </div>
+        <p class="pl-note">Medianwerte über {{ sm.frames }} Lights.
+            {% if sr.pixel_factor != 1 %}SAD misst nach SuperPixel-Debayering: 1 SAD-Pixel = {{ sr.pixel_factor|int }} Sensorpixel{% if sm.scale %} = {{ '%.2f'|format(sm.scale)|replace('.', ',') }}″{% endif %}.{% endif %}
+            {% if sm.outliers %}<span class="text-warning">{{ sm.outliers|length }} Light(s) mit deutlich größerer FWHM</span> (rot umrandet).{% endif %}</p>
+
+        <h2 class="mt-4">Verlauf über die Nacht
+            {% for side in sm.sides %}<span class="pl-legend"><i style="background: {{ side_colors.get(side, '#9aa4b2') }}"></i>{{ 'Pier West' if side == 'West' else 'Pier Ost' if side == 'East' else side }}</span>{% endfor %}</h2>
+        <div class="pl-charts">
+        {% for c in b.charts %}
+            <figure class="pl-chart">
+                <figcaption>{{ c.label }} <span>Median {{ c.median }}{{ c.unit }}</span></figcaption>
+                <svg viewBox="0 0 {{ c.W }} {{ c.H }}" role="img" aria-label="{{ c.label }} über die Zeit">
+                    {% for yt in c.yticks %}
+                    <line x1="{{ c.L }}" x2="{{ c.W - 10 }}" y1="{{ yt.y }}" y2="{{ yt.y }}" class="pl-grid"/>
+                    <text x="{{ c.L - 6 }}" y="{{ yt.y + 3 }}" text-anchor="end" class="pl-axis">{{ yt.label }}</text>
+                    {% endfor %}
+                    {% for xt in c.xticks %}<text x="{{ xt.x }}" y="{{ c.H - 6 }}" text-anchor="middle" class="pl-axis">{{ xt.label }}</text>{% endfor %}
+                    {% for p in c.points %}
+                    <a href="{{ url_for('main.session_page', sid=s.id, f=p.id, k=b.kind) }}#viewer"
+                       hx-get="{{ url_for('main.sad_viewer', sid=s.id, f=p.id, k=b.kind) }}" hx-target="#viewer-{{ sr.id }}" hx-swap="innerHTML">
+                        <circle cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4 if p.outlier else 2.6 }}" fill="{{ p.color }}"
+                                {% if p.outlier %}stroke="#ff5c5c" stroke-width="2"{% endif %}>
+                            <title>{{ p.t }} UTC · {{ p.v }}{{ c.unit }} · {{ p.name }}</title></circle>
+                    </a>
+                    {% endfor %}
+                </svg>
+            </figure>
+        {% endfor %}
+        </div>
+        <p class="pl-note">Ein Klick auf einen Punkt zeigt die Karten dieses Lights.</p>
+
+        <h2 class="mt-4" id="viewer">Karten</h2>
+        <div id="viewer-{{ sr.id }}">
+            {% if b.frame %}{% with frame = b.frame, series = sr, kind = b.kind, sid = s.id %}{% include "_sad_viewer.html" %}{% endwith %}
+            {% else %}<p class="text-body-secondary">Keine Karten-PNGs gespeichert.</p>{% endif %}
+        </div>
+
+        {% if sm.outliers %}
+        <h2 class="mt-4">Auffällige Lights <span class="pl-count">FWHM mehr als {{ config.SAD_OUTLIER_FACTOR|string|replace('.', ',') }}× Median</span></h2>
+        <table class="table table-sm pl-table">
+            <thead><tr><th>Zeit (UTC)</th><th>Datei</th><th class="text-end">FWHM Mitte</th><th class="text-end">Elliptizität</th><th class="text-end">Sterne</th></tr></thead>
+            <tbody>{% for f in sm.outliers %}
+            <tr><td>{{ f.time_utc|de_date('%d.%m. %H:%M') }}</td>
+                <td class="pl-path"><a href="{{ url_for('main.session_page', sid=s.id, f=f.id) }}#viewer">{{ f.name }}</a></td>
+                <td class="text-end">{{ '%.2f'|format(f.fwhm_center)|replace('.', ',') }} px</td>
+                <td class="text-end">{{ '%.2f'|format(f.ellipticity)|replace('.', ',') if f.ellipticity is not none else '–' }}</td>
+                <td class="text-end">{{ f.stars or '–' }}</td></tr>
+            {% endfor %}</tbody>
+        </table>
+        {% endif %}
+
+        {% if sr.ai_reviews %}{% set r = sr.ai_reviews[0] %}{% set lb = r.labels %}
+        <h2 class="mt-4">KI-Bewertung <span class="pl-count">{{ r.model or '' }} · {{ (r.created or '')[:16]|replace('T', ' ') }} · {{ r.frames }} Lights{% if sr.ai_reviews|length > 1 %} · {{ sr.ai_reviews|length }} Bewertungen, neueste gezeigt{% endif %}</span></h2>
+        <div class="pl-ai">
+            {% if r.verdict %}<p class="pl-ai-verdict"><b>{{ lb.get('verdict', 'Gesamturteil') }}:</b> {{ r.verdict }}</p>{% endif %}
+            {% if r.order %}<p class="mb-1"><b>{{ lb.get('order', 'Reihenfolge') }}:</b></p>
+            <ol class="pl-ai-order">{% for o in r.order %}<li>{{ o }}</li>{% endfor %}</ol>{% endif %}
+            {% for f in r.findings %}
+            <details class="pl-ai-finding pl-ai-{{ f.status }}">
+                <summary><span class="pl-ai-status">{{ lb.get('status' ~ (f.status or '')|capitalize, f.status) }}</span> {{ f.topic }}
+                    {% if f.confidence %}<small>· {{ lb.get('confidence', 'Sicherheit') }} {{ lb.get(f.confidence, f.confidence) }}</small>{% endif %}</summary>
+                {% for key in ('observation', 'appearance', 'reasoning', 'alternatives', 'action', 'check') %}{% if f[key] %}
+                <p><b>{{ lb.get(key, key) }}:</b> {{ f[key] }}</p>{% endif %}{% endfor %}
+            </details>
+            {% endfor %}
+            {% if r.text %}<pre class="pl-ai-text">{{ r.text }}</pre>{% endif %}
+        </div>
+        {% endif %}
+        </div>
+        </details>
+    </section>
+    {% endfor %}
+</div>
+<script>
+// a link to #night, #guiding, #wbpp or #sad opens that (collapsed) section
+(() => {
+    const open = () => {
+        const el = location.hash && document.getElementById(location.hash.slice(1));
+        if (el && el.tagName === 'DETAILS' && !el.open) { el.open = true; el.scrollIntoView(); }
+    };
+    open();
+    window.addEventListener('hashchange', open);
+})();
+</script>
+{% endblock %}

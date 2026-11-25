@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+{% block title %}Statistik · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page">
+    <h1>Statistik</h1>
+    <div class="pl-total"><span>{{ totals.seconds|hours }}</span> Stunden Belichtung insgesamt</div>
+    <div class="pl-tiles">
+        <div class="pl-tile"><b>{{ totals.targets }}</b><span>Ziele</span></div>
+        <div class="pl-tile"><b>{{ totals.sessions }}</b><span>Sessions</span></div>
+        <div class="pl-tile"><b>{{ totals.nights }}</b><span>Nächte</span></div>
+        <div class="pl-tile"><b>{{ totals.lights|num }}</b><span>Lights</span></div>
+        <div class="pl-tile"><b>{{ totals.rejected|num }}</b><span>Aussortiert</span></div>
+    </div>
+
+    <h2 class="pl-h2">Belichtung pro Monat</h2>
+    {% if series %}
+    <div class="pl-months" role="img" aria-label="Belichtungsstunden pro Monat">
+        {% for month, secs in series %}
+        <div class="pl-month" title="{{ month }}: {{ secs|hours }} h">
+            <div class="pl-month-bar" style="height: {{ (100 * secs / series_max) if series_max else 0 }}%">
+                {% if secs %}<span>{{ secs|hours(0) if secs >= 36000 else secs|hours }}</span>{% endif %}
+            </div>
+            <small>{{ month[5:] }}{% if month[5:] == '01' or loop.first %}<br>{{ month[:4] }}{% endif %}</small>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}<p class="text-body-secondary">Noch keine Sessions.</p>{% endif %}
+
+    <h2 class="pl-h2" id="usage">Nutzung der Ausrüstung</h2>
+    {% set tabs = [('rigs', 'Rigs', 'Rig'), ('cameras', 'Kameras', 'Kamera'), ('optics', 'Teleskope & Objektive', 'Optik'), ('filters', 'Filter', 'Filter')] %}
+    <ul class="nav nav-pills pl-usage-tabs" role="tablist">
+        {% for key, label, _ in tabs %}
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if loop.first %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#usage-{{ key }}"
+                    type="button" role="tab">{{ label }} <span class="pl-count">{{ usage[key]|length }}</span></button></li>
+        {% endfor %}
+    </ul>
+    <div class="tab-content">
+    {% for key, label, col in tabs %}
+        {% set rows = usage[key] %}
+        {% set umax = rows|map(attribute='seconds')|max if rows else 0 %}
+        <div class="tab-pane {% if loop.first %}show active{% endif %}" id="usage-{{ key }}" role="tabpanel">
+        {% if rows %}
+        <div class="table-responsive">
+        <table class="table table-sm pl-table align-middle pl-usage">
+            <thead><tr><th>{{ col }}</th><th class="pl-usage-bar">Stunden</th><th class="text-end">Anteil</th>
+                <th class="text-end">Lights</th><th class="text-end">Sessions</th><th class="text-end">Nächte</th>
+                <th class="text-end">Ziele</th><th>Zeitraum</th></tr></thead>
+            <tbody>{% for r in rows %}
+            <tr class="{% if r.unassigned %}pl-usage-unassigned{% endif %}">
+                <td><span class="fw-semibold">{{ r.name }}</span>
+                    {% if r.detail %}<div class="pl-note m-0">{{ r.detail }}</div>{% endif %}
+                    {% if key in ('cameras', 'optics') and r.no_rig_s and not r.unassigned %}<div class="pl-note m-0">davon {{ r.no_rig_s|hours }} h ohne Rig</div>{% endif %}</td>
+                <td class="pl-usage-bar" title="{{ years_title(r.years) }}">
+                    <div class="pl-bar-row m-0"><div class="pl-bar"><div style="width: {{ (100 * r.seconds / umax) if umax else 0 }}%"></div></div>
+                    <span class="pl-bar-value">{{ r.seconds|hours }} h</span></div></td>
+                <td class="text-end">{{ '%.0f'|format(100 * r.share) }} %</td>
+                <td class="text-end">{{ r.lights|num }}</td>
+                <td class="text-end">{{ r.n_sessions }}</td>
+                <td class="text-end">{{ r.n_nights }}</td>
+                <td class="text-end">{{ r.n_targets }}</td>
+                <td class="text-nowrap">{% if r.first %}{{ r.first|de_date('%m.%Y') }}{% if r.last.strftime('%Y%m') != r.first.strftime('%Y%m') %} – {{ r.last|de_date('%m.%Y') }}{% endif %}{% else %}–{% endif %}</td>
+            </tr>
+            {% endfor %}</tbody>
+        </table>
+        </div>
+        {% else %}<p class="text-body-secondary">Keine Daten.</p>{% endif %}
+        </div>
+    {% endfor %}
+    </div>
+    <p class="pl-note">Gezählt werden verwendbare Lights (ohne REJECTED und Duplikate). Kamera und Optik kommen aus dem
+        zugeordneten <a href="{{ url_for('main.rigs_page') }}">Rig</a>, sonst aus dem Header. Jahreswerte zeigt der Tooltip über der Stundenspalte.</p>
+
+    <div class="row g-4 mt-1">
+        <div class="col-lg-6">
+            <h2 class="pl-h2">Nach Jahr</h2>
+            <table class="table table-sm pl-table">
+                <thead><tr><th>Jahr</th><th class="text-end">Stunden</th><th class="text-end">Sessions</th><th class="text-end">Nächte</th><th class="text-end">Ziele</th></tr></thead>
+                <tbody>{% for year, y in years %}
+                <tr><td>{{ year }}</td><td class="text-end">{{ y.seconds|hours }}</td><td class="text-end">{{ y.sessions }}</td>
+                    <td class="text-end">{{ y.nights|length }}</td><td class="text-end">{{ y.targets|length }}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+        </div>
+        {% if sites %}
+        <div class="col-lg-6">
+            <h2 class="pl-h2">Standorte <small class="text-body-secondary fw-normal">(SITELAT/SITELONG im Header)</small></h2>
+            <table class="table table-sm pl-table">
+                <thead><tr><th>Breite</th><th>Länge</th><th class="text-end">Stunden</th><th class="text-end">Nächte</th><th class="text-end">Lights</th></tr></thead>
+                <tbody>{% for s in sites %}
+                <tr><td>{{ '%.2f'|format(s.lat)|replace('.', ',') }}° {{ 'N' if s.lat >= 0 else 'S' }}</td>
+                    <td>{{ '%.2f'|format(s.lon|abs)|replace('.', ',') }}° {{ 'O' if s.lon >= 0 else 'W' }}</td>
+                    <td class="text-end">{{ s.seconds|hours }}</td><td class="text-end">{{ s.nights|length }}</td>
+                    <td class="text-end">{{ s.lights|num }}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+        </div>
+        {% endif %}
+        <div class="col-lg-6">
+            <h2 class="pl-h2">Meiste Belichtung</h2>
+            {% set tmax = top[0].exposure_s if top else 0 %}
+            {% for t in top %}
+            <div class="pl-bar-row">
+                <a class="pl-bar-label" href="{{ url_for('main.target', tid=t.id) }}">{{ t.name }}</a>
+                <div class="pl-bar"><div style="width: {{ 100 * t.exposure_s / tmax }}%"></div></div>
+                <span class="pl-bar-value">{{ t.exposure_s|hours }} h</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

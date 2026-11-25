@@ -1,0 +1,46 @@
+# Photon Ledger – astrophotography archive
+#
+#   ARCHIVE_PATH  your image archive, mounted read-only
+#   ./data        database (SQLite), thumbnails – bind mount on the host, no docker volume
+#
+# Settings: copy .env.example to .env and adjust.
+# Update:   docker compose pull && docker compose up -d
+
+x-photonledger: &photonledger
+  # built by GitHub Actions on every push to main (.github/workflows/docker.yml);
+  # "docker compose build" builds the same image locally instead
+  image: ghcr.io/trickx/photonledger:${PHOTONLEDGER_TAG:-latest}
+  build:
+    context: .
+    args:
+      WITH_AIRGUS: ${WITH_AIRGUS:-1}   # 0 = without Airgus (no ASIAIR/NINA night logs)
+  user: "${PUID:-1000}:${PGID:-1000}"
+  restart: unless-stopped
+  volumes:
+    - ${ARCHIVE_PATH:-/share/Multimedia/Astro}:/archive:ro
+    - ./data:/data
+  env_file: .env
+
+services:
+  web:
+    <<: *photonledger
+    container_name: photonledger-web
+    ports:
+      - "${PORT:-5080}:5080"
+    environment:
+      RUNWEB: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  indexer:
+    <<: *photonledger
+    container_name: photonledger-indexer
+    environment:
+      RUNINDEXER: "true"
+    depends_on:
+      web:
+        condition: service_healthy     # web has migrated the database

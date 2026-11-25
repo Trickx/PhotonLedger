@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+{% block title %}{% if selected %}{{ selected.name }} · {% endif %}Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-catalog">
+    <aside class="pl-list-pane">
+        <form class="pl-filters" hx-get="{{ url_for('main.target_list') }}" hx-target="#target-list"
+              hx-trigger="change, input from:#q delay:250ms" hx-include="this">
+            <input type="hidden" name="t" value="{{ selected.id if selected else '' }}">
+            <input id="q" class="form-control form-control-sm" type="search" name="q" value="{{ args.get('q', '') }}"
+                   placeholder="Suche: Name, Katalog, Typ, Sternbild …" autocomplete="off">
+            <div class="pl-filter-head">
+                <span class="pl-filter-label"><i class="bi bi-funnel"></i> Filter</span>
+                <button type="button" class="btn btn-link btn-sm p-0 pl-filter-reset" title="Alle Filter zurücksetzen"
+                        onclick="const f=this.form; f.querySelectorAll('.pl-filter-grid select').forEach(s=>s.value=''); f.dispatchEvent(new Event('change'))">
+                    Zurücksetzen</button>
+            </div>
+            <div class="pl-filter-grid">
+                <select class="form-select form-select-sm" name="year">
+                    <option value="">Alle Jahre</option>
+                    {% for y in opts.years %}<option {% if args.get('year') == y|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+                <select class="form-select form-select-sm" name="camera">
+                    <option value="">Alle Kameras</option>
+                    {% for c in opts.cameras %}<option {% if args.get('camera') == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                </select>
+                <select class="form-select form-select-sm" name="focal">
+                    <option value="">Alle Brennweiten</option>
+                    {% for f in opts.focals %}<option value="{{ f }}" {% if args.get('focal') == f|string %}selected{% endif %}>{{ f }} mm</option>{% endfor %}
+                </select>
+                <select class="form-select form-select-sm" name="filter">
+                    <option value="">Alle Filter</option>
+                    {% for f in opts.filters %}<option {% if args.get('filter') == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="pl-sort">
+                <label class="pl-filter-label" for="sort"><i class="bi bi-sort-down"></i> Sortieren nach</label>
+                <select id="sort" class="form-select form-select-sm" name="sort">
+                    <option value="name" {% if args.get('sort') in (None, 'name') %}selected{% endif %}>Katalog</option>
+                    <option value="hours" {% if args.get('sort') == 'hours' %}selected{% endif %}>Belichtung</option>
+                    <option value="recent" {% if args.get('sort') == 'recent' %}selected{% endif %}>Letzte Session</option>
+                </select>
+            </div>
+        </form>
+        <div id="target-list" class="pl-target-list">
+            {% with selected_id = selected.id if selected else None %}{% include "_target_list.html" %}{% endwith %}
+        </div>
+    </aside>
+
+    <section id="detail" class="pl-detail">
+        {% if selected %}
+            {% include "_target_detail.html" %}
+        {% else %}
+            <div class="pl-empty">
+                <i class="bi bi-hourglass-split"></i>
+                <h2>Noch keine Daten</h2>
+                <p>Der Indexer hat das Archiv noch nicht eingelesen.
+                   {% if last_run %}Letzter Lauf: {{ last_run.phase }}{% if last_run.message %} – {{ last_run.message }}{% endif %}.{% endif %}</p>
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.status') }}">Indexer-Status</a>
+            </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

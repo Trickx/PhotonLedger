@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% from "_phd_dot.html" import phd_dot, night_dot, wbpp_dot, sad_dot %}
+{% block title %}Sessions · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page">
+    <h1>Sessions <span class="pl-count">{{ sessions|length }}</span></h1>
+    <p class="pl-lead">Eine Session ist ein Ordner mit Lights (bzw. Flats, Darks, Bias). Liegt kein Datumsordner dazwischen, ist der Zielordner selbst die Session.</p>
+    <p class="pl-dot-legend">Log (ASIAIR/NINA), PHD2, WBPP und SAD:
+        <span><i class="pl-dot pl-dot-ok"></i>Log vorhanden, keine Fehler</span>
+        <span><i class="pl-dot pl-dot-none"></i>kein Log</span>
+        <span><i class="pl-dot pl-dot-error"></i>Log mit Fehlern</span>
+        <span>· Details beim Überfahren, Klick öffnet den Bereich auf der Session-Seite</span></p>
+    <div class="table-responsive">
+    <table class="table table-sm pl-table align-middle">
+        <thead><tr>
+            <th>Datum</th><th>Ziel</th><th>Rig</th><th>Filter</th>
+            <th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="text-center">F / D / B</th><th class="text-center" title="ASIAIR- oder NINA-Log (mit Airgus ausgewertet): grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">Log</th><th class="text-center" title="PHD2-Guiding-Log: grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">PHD2</th><th class="text-center" title="WBPP-Log (PixInsight): grün mit WBPP gestackt ohne Fehler, orange nicht gestackt bzw. kein Log, rot Lauf fehlgeschlagen oder mit Fehlern">WBPP</th><th class="text-center" title="StarAberrationDiagnostics: grün ausgewertet ohne Auffälligkeiten, orange keine Auswertung, rot Verkippung, Randunschärfe oder Nachführfehler">SAD</th>
+        </tr></thead>
+        <tbody>
+        {% for s in sessions %}
+        <tr>
+            <td class="text-nowrap"><a href="{{ url_for('main.session_page', sid=s.id) }}">{{ s.date|de_date }}</a>{% if s.nights|length > 1 %}<br><small class="text-body-secondary">{{ s.nights|length }} Nächte</small>{% endif %}</td>
+            <td>{% if s.target %}<a href="{{ url_for('main.target', tid=s.target.id) }}">{{ s.target.name }}</a>{% if s.target.common_name %}<br><small class="text-body-secondary">{{ s.target.common_name }}</small>{% endif %}{% endif %}
+                {% if s.duplicate_of %}<br><small class="text-warning">Kopie von {{ s.duplicate_of }}</small>{% endif %}</td>
+            <td>{% for x in rigs[s.id] %}<div class="text-nowrap">
+                {%- if x.rig %}<span title="{{ x.rig.camera.name }} · {{ x.rig.optic.name }}{% if x.rig.corrector %} · {{ x.rig.corrector.name }}{% endif %}{% if x.how == 'session' %} (für diese Session gewählt){% elif x.how == 'manual' %} (von Hand zugeordnet){% endif %}">{{ x.rig.name }}</span>
+                {%- else %}<span class="text-body-secondary" title="Kein Rig passt zu Kamera und Brennweite – unter Ausrüstung oder auf der Session-Seite zuordnen">kein Rig · {{ x.d.camera or '?' }}{% if x.d.focal %} · {{ x.d.focal }} mm{% endif %}</span>{% endif %}</div>
+                {%- else %}–{% endfor %}</td>
+            <td>{{ s.filters.keys()|join(', ') }}</td>
+            <td class="text-end">{{ s.lights }}{% if s.rejected %}<br><small class="text-body-secondary">+{{ s.rejected }} aussort.</small>{% endif %}{% if s.duplicates %}<br><small class="text-body-secondary">+{{ s.duplicates }} doppelt</small>{% endif %}</td>
+            <td class="text-end text-nowrap">{{ s.exposure_s|duration }}</td>
+            <td class="text-center text-nowrap {% if not s.calibrated %}text-warning{% endif %}">{{ s.flats or '–' }} / {{ s.darks or '–' }} / {{ s.biases or '–' }}</td>
+            <td class="text-center">{{ night_dot(night.get(s.root), s.id) }}</td>
+            <td class="text-center text-nowrap">{{ phd_dot(phd.get(s.root), s.id) }}</td>
+            <td class="text-center">{{ wbpp_dot(wbpp.get(s.root), s.id) }}</td>
+            <td class="text-center text-nowrap">{{ sad_dot(sad.get(s.root), s.id) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% macro phd_dot(st, sid) -%}
+{%- set st = st or {'status': 'none', 'reasons': ['kein PHD2-Log zu dieser Session'], 'notes': [], 'rms': none} -%}
+{%- set label = {'ok': 'PHD2-Log vorhanden, keine Fehler', 'none': 'kein PHD2-Log', 'error': 'PHD2-Log mit Fehlern'}[st.status] -%}
+<a class="pl-dot pl-dot-{{ st.status }}" href="{{ url_for('main.session_page', sid=sid) }}#guiding"
+   title="{{ label }}{% if st.rms %} · {{ '%.2f'|format(st.rms)|replace('.', ',') }}″ RMS{% endif %}{% for r in (st.reasons if st.status == 'error' else []) + (st.notes or []) %}&#10;• {{ r }}{% endfor %}"
+   aria-label="{{ label }}"></a>
+{%- if st.rms %}<small class="pl-dot-rms">{{ '%.2f'|format(st.rms)|replace('.', ',') }}″</small>{% endif %}
+{%- endmacro %}
+
+{% macro night_dot(st, sid) -%}
+{%- set st = st or {'status': 'none', 'reasons': ['kein ASIAIR- oder NINA-Log zu dieser Session'], 'notes': []} -%}
+{%- set label = {'ok': 'ASIAIR/NINA-Log vorhanden, keine Fehler', 'none': 'kein ASIAIR/NINA-Log', 'error': 'ASIAIR/NINA-Log mit Fehlern'}[st.status] -%}
+<a class="pl-dot pl-dot-{{ st.status }}" href="{{ url_for('main.session_page', sid=sid) }}#night"
+   title="{{ label }}{% for r in (st.reasons if st.status == 'error' else []) + (st.notes or []) %}&#10;• {{ r }}{% endfor %}"
+   aria-label="{{ label }}"></a>
+{%- endmacro %}
+
+{% macro wbpp_dot(st, sid) -%}
+{%- set st = st or {'status': 'none', 'reasons': ['kein WBPP-Log zu diesem Ziel'], 'notes': []} -%}
+{%- set label = {'ok': 'mit WBPP gestackt, keine Fehler', 'none': 'nicht mit WBPP gestackt (kein Log)', 'error': 'WBPP-Lauf mit Fehlern'}[st.status] -%}
+<a class="pl-dot pl-dot-{{ st.status }}" href="{{ url_for('main.session_page', sid=sid) }}#wbpp"
+   title="{{ label }}{% for r in st.reasons + (st.notes or []) %}&#10;• {{ r }}{% endfor %}"
+   aria-label="{{ label }}"></a>
+{%- endmacro %}
+
+{% macro sad_dot(st, sid) -%}
+{%- set st = st or {'status': 'none', 'reasons': ['keine Auswertung von StarAberrationDiagnostics'], 'notes': [], 'summary': none} -%}
+{%- set sm = st.summary -%}
+{%- set label = {'ok': 'SAD vorhanden, keine Auffälligkeiten', 'none': 'keine SAD-Auswertung', 'error': 'SAD mit Auffälligkeiten'}[st.status] -%}
+{%- set fwhm = ('%.1f'|format(sm.fwhm_center_arcsec)|replace('.', ',') ~ '″') if sm and sm.fwhm_center_arcsec else (('%.2f'|format(sm.fwhm_center)|replace('.', ',') ~ ' px') if sm and sm.fwhm_center else '') -%}
+<a class="pl-dot pl-dot-{{ st.status }}" href="{{ url_for('main.session_page', sid=sid) }}#sad"
+   title="{{ label }}{% if sm %}&#10;FWHM Mitte {{ fwhm or '–' }} · Rand/Mitte {{ '%.2f'|format(sm.ratio or 0)|replace('.', ',') }} · ε {{ '%.2f'|format(sm.ellipticity or 0)|replace('.', ',') }}{% endif %}{% for r in st.reasons + (st.notes or []) %}&#10;• {{ r }}{% endfor %}"
+   aria-label="{{ label }}"></a>
+{%- if fwhm %}<small class="pl-dot-rms">{{ fwhm }}</small>{% endif %}
+{%- endmacro %}

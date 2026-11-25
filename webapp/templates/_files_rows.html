@@ -1,0 +1,35 @@
+{% set start = (page - 1) * 250 %}
+{% for f in rows[start:] %}
+<tr>
+    <td class="pl-path"><span class="pl-path-dir">{{ f.path.rsplit('/', 1)[0] }}/</span>{{ f.path.rsplit('/', 1)[-1] }}</td>
+    {% if kind == 'error' %}
+    <td class="small">{{ f.error }}</td>
+    {% elif kind == 'intermediate' %}
+    <td class="text-end text-nowrap">{{ (f.size / 1048576)|round(1)|string|replace('.', ',') }} MB</td>
+    <td class="text-nowrap">{{ f.mtime|timestamp }}</td>
+    <td class="small">{% for c in f.findings %}{% set lbl, sev = rule_info[c] %}<span class="pl-rule-badge pl-rule-badge-{{ sev }}">{{ lbl }}</span> {% endfor %}</td>
+    {% else %}
+    <td class="text-nowrap">{{ f.camera or '–' }}</td>
+    <td class="text-end text-nowrap">{{ f.exptime|exposure }}</td>
+    <td class="text-nowrap">{{ f.date_obs|de_date('%d.%m.%Y %H:%M:%S') }}</td>
+    <td class="text-end text-nowrap">{% if f.temp is not none %}{{ '%.0f'|format(f.temp) }} °C{% else %}–{% endif %}</td>
+    <td class="text-nowrap small">
+        {% if kind == 'ignored' %}
+            <span class="text-warning"><i class="bi bi-exclamation-triangle"></i>
+            {% if f.header and f.header.get('NAXIS3') %}Stack ({{ f.header.get('PROGRAM') or f.program or '?' }}){% else %}kein Rohbild{% endif %}
+            – gehört nach „Processing“</span>
+        {% elif f.rejected %}<span class="badge text-bg-secondary">aussortiert</span>
+        {% elif f.duplicate %}<span class="badge text-bg-warning">doppelt</span>
+        {% else %}<span class="text-body-secondary">verwendet</span>{% endif %}
+    </td>
+    {% endif %}
+</tr>
+{% else %}
+<tr><td colspan="6" class="text-body-secondary">Keine Dateien gefunden.</td></tr>
+{% endfor %}
+{% if more %}
+<tr id="more-row"><td colspan="6" class="text-center">
+    <button class="btn btn-sm btn-outline-secondary" hx-get="{{ url_for('main.files', page=page + 1, rows=1, **args) }}"
+            hx-target="#more-row" hx-swap="outerHTML">Weitere 250 laden</button>
+</td></tr>
+{% endif %}

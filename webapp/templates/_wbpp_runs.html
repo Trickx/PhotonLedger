@@ -1,0 +1,66 @@
+{# WBPP runs (one <details> per run); expects wbpp_runs from wbpp_view.session_runs #}
+    {% for r in wbpp_runs %}{% set w = r.run %}{% set cov = r.cov %}
+    <details class="pl-phd pl-wbpp mb-2" {% if r.latest %}open{% endif %}>
+        <summary>
+            <span class="pl-phd-title"><i class="pl-dot pl-dot-{{ 'ok' if r.ok and not r.errors else 'error' if not r.ok else 'none' }}"></i>
+                {{ w.started|de_date('%d.%m.%Y %H:%M') }}</span>
+            <span class="pl-phd-kpi">{% if r.ok %}masterLight erzeugt{% else %}<span class="text-danger">kein masterLight</span>{% endif %}
+                {% if r.latest %}<span class="badge text-bg-secondary ms-1">aktuell</span>{% endif %}</span>
+            <span class="pl-phd-kpi">{{ cov.used }} Lights im Stack{% if cov.available %} · {{ cov.available }} im Archiv{% endif %}</span>
+            <span class="pl-phd-kpi">{% if r.errors %}<span class="text-danger">{{ r.errors|sum(attribute=1) }} Fehler</span> · {% endif %}{{ r.warnings|sum(attribute=1) }} Warnungen</span>
+            <span class="pl-phd-kpi">WBPP {{ w.wbpp_version or '?' }} · {{ w.duration_s|duration }}</span>
+        </summary>
+        <div class="mt-2">
+            <p class="pl-note">PixInsight {{ w.pi_version or '?' }} · Log: <code>{{ w.path }}</code></p>
+
+            {% if cov.missing or cov.rejected_now or cov.newer %}
+            <div class="pl-wbpp-cov">
+                {% if cov.newer %}<div class="text-warning"><i class="bi bi-clock-history"></i> {{ cov.newer|length }} Light(s) sind neuer als dieser Lauf – der Master ist veraltet.</div>{% endif %}
+                {% if cov.missing %}<details><summary class="pl-note">{{ cov.missing|length }} verwendbare Light(s) des Ziels sind nicht in diesem Stack</summary>
+                    <ul class="pl-issue-hint">{% for s in cov.missing[:60] %}<li><code>{{ s }}</code></li>{% endfor %}{% if cov.missing|length > 60 %}<li>…</li>{% endif %}</ul></details>{% endif %}
+                {% if cov.rejected_now %}<details><summary class="pl-note">{{ cov.rejected_now|length }} Light(s) im Stack liegen inzwischen in REJECTED</summary>
+                    <ul class="pl-issue-hint">{% for s in cov.rejected_now %}<li><code>{{ s }}</code></li>{% endfor %}</ul></details>{% endif %}
+            </div>
+            {% endif %}
+
+            <table class="table table-sm pl-table align-middle">
+                <thead><tr><th>Schritt</th><th class="text-end">Bilder</th><th>Ergebnis</th></tr></thead>
+                <tbody>{% for b in r.steps %}
+                <tr><td class="text-nowrap">{{ b.step|title }}</td>
+                    <td class="text-end">{% if b.frames %}{{ b.active }}{% if b.active != b.frames %}/{{ b.frames }}{% endif %}{% elif b.rejected is defined %}{{ b.rejected }} aussortiert{% endif %}</td>
+                    <td class="small">{% for x in b.results or [] %}<div>{{ x }}</div>{% endfor %}
+                        {% for e in b.errors or [] %}<div class="text-danger">{{ e }}</div>{% endfor %}
+                        {% if b.filter %}<span class="text-body-secondary">Filter {{ b.filter }} · {{ b.exposure }}{% if b.keywords %} · {{ b.keywords }}{% endif %}</span>{% endif %}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+
+            {% if r.masters %}
+            <p class="pl-note mb-1">Kalibrier-Master der Lights:</p>
+            <ul class="pl-issue-hint">{% for k, v in r.masters.items() %}<li>{{ {'bias': 'Bias', 'dark': 'Dark', 'flat': 'Flat'}.get(k, k) }}: <code>{{ v }}</code></li>{% endfor %}</ul>
+            {% endif %}
+
+            {% if r.errors %}
+            <p class="pl-note mb-1 mt-2">Fehler:</p>
+            <ul class="pl-issue-hint">{% for m, n in r.errors %}<li class="text-danger">{{ m }}{% if n > 1 %} <span class="text-body-secondary">({{ n }}×)</span>{% endif %}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if r.warnings %}
+            <p class="pl-note mb-1 mt-2">Warnungen:</p>
+            <ul class="pl-issue-hint">{% for m, n in r.warnings %}<li>{{ m }}{% if n > 1 %} <span class="text-body-secondary">({{ n }}×)</span>{% endif %}</li>{% endfor %}</ul>
+            {% endif %}
+
+            {% if r.worst %}
+            <p class="pl-note mb-1 mt-2">Lights mit den meisten verworfenen Pixeln bei der Integration
+                (Median {{ '%.2f'|format(r.median_rej)|replace('.', ',') }} %):</p>
+            <table class="table table-sm pl-table align-middle">
+                <thead><tr><th>Light</th><th class="text-end">verworfen</th><th class="text-end">Rauschen σ</th><th class="text-end">PSF-Fits</th></tr></thead>
+                <tbody>{% for s, m in r.worst %}
+                <tr><td class="pl-path">{{ s }}</td>
+                    <td class="text-end {% if r.median_rej and m.rejected_pct > 3 * r.median_rej %}text-warning{% endif %}">{{ '%.2f'|format(m.rejected_pct)|replace('.', ',') }} %</td>
+                    <td class="text-end">{{ '%.5f'|format(m.noise)|replace('.', ',') if m.noise else '–' }}</td>
+                    <td class="text-end">{{ m.psf_fits or '–' }}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+            {% endif %}
+        </div>
+    </details>
+    {% endfor %}

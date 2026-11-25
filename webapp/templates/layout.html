@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Photon Ledger{% endblock %}</title>
+    <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='bootstrap-icons/font/bootstrap-icons.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='photonledger.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', filename='darkmode.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='htmx-2.0.3.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+</head>
+<body>
+<div class="pl-app">
+    <nav class="pl-nav">
+        <a class="pl-brand" href="{{ url_for('main.index') }}" title="Photon Ledger">
+            <i class="bi bi-journal-richtext"></i><span>Photon Ledger</span>
+        </a>
+        {% set ep = request.endpoint or '' %}
+        <a class="pl-nav-link {% if ep in ('main.index', 'main.target') %}active{% endif %}" href="{{ url_for('main.index') }}">
+            <i class="bi bi-globe2"></i><span>Katalog</span></a>
+        <a class="pl-nav-link {% if ep == 'main.sessions' %}active{% endif %}" href="{{ url_for('main.sessions') }}">
+            <i class="bi bi-calendar3"></i><span>Sessions</span></a>
+        <a class="pl-nav-link {% if ep == 'main.equipment' %}active{% endif %}" href="{{ url_for('main.equipment') }}">
+            <i class="bi bi-camera"></i><span>Ausrüstung</span></a>
+        <a class="pl-nav-link {% if ep == 'main.rigs_page' %}active{% endif %}" href="{{ url_for('main.rigs_page') }}">
+            <i class="bi bi-tools"></i><span>Rigs</span></a>
+        <a class="pl-nav-link {% if ep == 'main.statistics' %}active{% endif %}" href="{{ url_for('main.statistics') }}">
+            <i class="bi bi-bar-chart"></i><span>Statistik</span></a>
+        <a class="pl-nav-link {% if ep == 'main.checks' %}active{% endif %}" href="{{ url_for('main.checks') }}">
+            <i class="bi bi-clipboard-check"></i><span>Prüfungen</span>
+            {% set nb = issue_badge() %}{% if nb %}<span class="pl-nav-badge" title="{{ nb }} Fehler und Warnungen">{{ nb }}</span>{% endif %}</a>
+        <a class="pl-nav-link {% if ep == 'main.status' %}active{% endif %}" href="{{ url_for('main.status') }}">
+            <i class="bi bi-activity"></i><span>Indexer</span></a>
+
+        <div class="pl-nav-bottom dropdown">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="bd-theme"
+                    data-bs-toggle="dropdown" aria-expanded="false">
+                <svg class="theme-icon-active" width="14" height="14" fill="currentColor"><use href="#circle-half"></use></svg>
+                <span class="visually-hidden" id="bd-theme-text">Farbschema</span>
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="bd-theme-text">
+                <li><button type="button" class="dropdown-item" data-bs-theme-value="light">
+                    <svg class="me-2" width="14" height="14" fill="currentColor"><use href="#sun-fill"></use></svg>Hell</button></li>
+                <li><button type="button" class="dropdown-item" data-bs-theme-value="dark">
+                    <svg class="me-2" width="14" height="14" fill="currentColor"><use href="#moon-stars-fill"></use></svg>Dunkel</button></li>
+                <li><button type="button" class="dropdown-item" data-bs-theme-value="auto">
+                    <svg class="me-2" width="14" height="14" fill="currentColor"><use href="#circle-half"></use></svg>System</button></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="pl-main">
+        {% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}
+        <div class="pl-flash">{% for cat, m in msgs %}
+            <div class="alert alert-{{ cat }} alert-dismissible fade show py-2 small" role="alert">{{ m }}
+                <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Schließen"></button></div>
+        {% endfor %}</div>{% endif %}{% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<svg xmlns="http://www.w3.org/2000/svg" class="d-none">
+    <symbol id="circle-half" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 0 8 1v14zm0 1A8 8 0 1 1 8 0a8 8 0 0 1 0 16z"/></symbol>
+    <symbol id="moon-stars-fill" viewBox="0 0 16 16"><path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/></symbol>
+    <symbol id="sun-fill" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8z"/></symbol>
+</svg>
+</body>
+</html>

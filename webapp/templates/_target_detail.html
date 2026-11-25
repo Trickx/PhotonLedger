@@ -1,0 +1,163 @@
+{% from "_phd_dot.html" import phd_dot, night_dot %}
+{% if is_htmx %}<title>{{ t.name }} · Photon Ledger</title>{% endif %}
+<div class="pl-hero {% if not cover %}pl-hero-empty{% endif %}">
+    {% if cover %}
+        <a href="{{ url_for('main.media', kind='previews', vid=cover.id) }}" target="_blank" title="Vorschau öffnen">
+            <img src="{{ url_for('main.media', kind='previews', vid=cover.id) }}" alt="{{ cover.filename }}">
+        </a>
+        <span class="pl-hero-caption">{{ cover.filename }}</span>
+    {% else %}
+        <i class="bi bi-image"></i><span>Noch keine bearbeitete Version</span>
+    {% endif %}
+</div>
+
+<header class="pl-head">
+    <div>
+        <h1>{{ t.name }}</h1>
+        {% if t.common_name %}<div class="pl-subtitle">{{ t.common_name }}</div>{% endif %}
+        <div class="pl-badges">
+            {% if t.object_type %}<span class="badge pl-badge-type" title="{{ 'aus OpenNGC' if t.catalog_name else 'aus dem Ordnernamen geraten' }}"><i class="bi {{ type_icon(t.object_type) }}"></i> {{ t.object_type }}</span>{% endif %}
+            {% if t.constellation %}<span class="badge pl-badge-const">{{ t.constellation }}</span>{% endif %}
+        </div>
+        {% if t.ra is not none %}
+        <div class="pl-coords">
+            RA {{ t.ra|ra }} · Dec {{ t.dec|dec }}
+            {% if t.magnitude is not none %} · {{ '%.1f'|format(t.magnitude)|replace('.', ',') }} mag{% endif %}
+            {% if t.size_arcmin %} · {{ '%g'|format(t.size_arcmin|round(1))|replace('.', ',') }}′{% endif %}
+            {% if t.catalog_name %}<span class="pl-src" title="Position, Helligkeit und Größe aus OpenNGC">Katalog</span>{% else %}<span class="pl-src" title="Median der Aufnahmepositionen">Aufnahme</span>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</header>
+
+{% for w in t.warnings %}
+<div class="alert alert-warning py-2 px-3 mt-3 mb-0 small"><i class="bi bi-exclamation-triangle"></i> {{ w }}</div>
+{% endfor %}
+
+{% if versions %}
+<section class="pl-section">
+    <h2>Versionen <span class="pl-count">{{ versions|length }}</span></h2>
+    <div class="pl-versions">
+        {% for v in versions %}
+        <button class="pl-version {% if cover and v.id == cover.id %}active{% endif %}" type="button"
+                hx-post="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}" hx-target="#detail"
+                title="{{ v.path }}{% if v.width %} · {{ v.width }}×{{ v.height }}{% endif %} – als Titelbild wählen">
+            <img loading="lazy" src="{{ url_for('main.media', kind='thumbs', vid=v.id) }}" alt="{{ v.filename }}">
+            {% if cover and v.id == cover.id %}<i class="bi bi-check-circle-fill pl-version-check"></i>{% endif %}
+        </button>
+        {% endfor %}
+    </div>
+    {% if broken %}<p class="pl-note"><i class="bi bi-exclamation-triangle"></i> {{ broken|length }} Datei(en) ließen sich nicht als Vorschau lesen – siehe Indexer.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="pl-section">
+    <div class="pl-total"><span>{{ t.exposure_s|hours }}</span> Stunden Belichtung</div>
+    <div class="pl-tiles">
+        <div class="pl-tile"><b>{{ n_sessions }}</b><span>Sessions</span></div>
+        <div class="pl-tile"><b>{{ t.lights|num }}</b><span>Lights</span></div>
+        <div class="pl-tile"><b>{{ filters|length }}</b><span>Filter</span></div>
+        <div class="pl-tile"><b>{{ datasets|length }}</b><span>Ausrüstung</span></div>
+        <div class="pl-tile"><b>{{ n_calibrated }}/{{ n_sessions }}</b><span>Kalibriert</span></div>
+    </div>
+    {% if rejected %}<p class="pl-note">{{ rejected }} aussortierte Lights sind nicht mitgezählt.</p>{% endif %}
+</section>
+
+{% if t.catalog_ids %}
+<section class="pl-section">
+    <h2>Katalognummern</h2>
+    <div class="pl-chips">{% for c in t.catalog_ids %}<span class="pl-chip">{{ c }}</span>{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if t.objects_in_field %}
+<section class="pl-section">
+    <h2>Objekte im Bildfeld <span class="pl-count">{{ t.objects_in_field|length }}</span></h2>
+    {% macro obj_chip(o) -%}
+        <span class="pl-chip pl-chip-field {% if not o.inside %}pl-chip-edge{% endif %}"
+              title="{{ o.type }}{% if o.name %} – {{ o.name }}{% endif %}{% if o.alt %} ({{ o.alt }}){% endif %}{% if o.mag is not none %} · {{ o.mag }} mag{% endif %} · {{ o.sep|string|replace('.', ',') }}′ von der Bildmitte{% if not o.inside %} · liegt evtl. außerhalb (Bilddrehung unbekannt){% endif %}">{{ o.id }}</span>
+    {%- endmacro %}
+    <div class="pl-chips">{% for o in t.objects_in_field[:20] %}{{ obj_chip(o) }}{% endfor %}</div>
+    {% if t.objects_in_field|length > 20 %}
+    <details class="mt-2"><summary class="pl-note">{{ t.objects_in_field|length - 20 }} weitere anzeigen</summary>
+        <div class="pl-chips mt-2">{% for o in t.objects_in_field[20:] %}{{ obj_chip(o) }}{% endfor %}</div>
+    </details>
+    {% endif %}
+    <p class="pl-note">Aus OpenNGC anhand der Aufnahmeposition und des Bildfelds ({{ '%.0f'|format(t.fov_w) }}′ × {{ '%.0f'|format(t.fov_h) }}′), ohne Plate-Solve.
+        Blasse Einträge liegen in den Bildecken und sind je nach Kameradrehung evtl. nicht im Bild.</p>
+</section>
+{% endif %}
+
+{% if filters %}
+<section class="pl-section">
+    <h2>Belichtung nach Filter</h2>
+    {% for name, secs in filters %}
+    <div class="pl-bar-row">
+        <span class="pl-bar-label">{{ name }}</span>
+        <div class="pl-bar"><div style="width: {{ (100 * secs / filter_max) if filter_max else 0 }}%"></div></div>
+        <span class="pl-bar-value">{{ secs|hours }} h</span>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% if datasets %}
+<section class="pl-section">
+    <h2>Datensätze</h2>
+    <div class="pl-datasets">
+        {% for d in datasets %}
+        <div class="pl-dataset">
+            <div class="pl-dataset-main">
+                <strong>{% if d.focal %}{{ d.focal }} mm{% else %}Brennweite unbekannt{% endif %}</strong>
+                <span>{{ d.camera or 'Kamera unbekannt' }}{% if d.telescope %} · {{ d.telescope }}{% endif %}</span>
+                {% if d.scale %}<span class="pl-geo">{{ '%.2f'|format(d.scale)|replace('.', ',') }}″/px · {{ '%.0f'|format(d.fov_w) }}′ × {{ '%.0f'|format(d.fov_h) }}′</span>{% endif %}
+            </div>
+            <div class="pl-dataset-meta">
+                {{ d.seconds|hours }} h · {{ d.sessions }} Session{{ 's' if d.sessions != 1 }} · {{ d.lights }} Lights
+                · {{ d.first|de_date('%m/%Y') }}{% if d.last and d.first and d.last.strftime('%Y%m') != d.first.strftime('%Y%m') %} – {{ d.last|de_date('%m/%Y') }}{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<section class="pl-section">
+    <h2>Sessions <span class="pl-count">{{ sessions|length }}</span></h2>
+    {% if sessions %}
+    <div class="table-responsive">
+    <table class="table table-sm pl-table align-middle">
+        <thead><tr>
+            <th>Datum</th><th>Ordner</th><th>Ausrüstung</th>
+            <th class="text-end">Lights</th><th class="text-end">Belichtung</th>
+            <th class="text-center" title="Flats / Darks / Bias">F / D / B</th>
+            <th class="text-center" title="ASIAIR- oder NINA-Log (mit Airgus ausgewertet): grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">Log</th><th class="text-center" title="PHD2-Guiding-Log: grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">PHD2</th>
+        </tr></thead>
+        <tbody>
+        {% for s in sessions %}
+            <tr>
+                <td class="text-nowrap"><a href="{{ url_for('main.session_page', sid=s.id) }}">{{ s.date|de_date }}</a>{% if s.nights|length > 1 %}<br><small class="text-body-secondary">{{ s.nights|length }} Nächte</small>{% endif %}
+                {%- set o = sad.get(s.root) %}{% if o %}<br><span class="pl-optik" title="StarAberrationDiagnostics: FWHM Mitte, Rand/Mitte, Elliptizität"><i class="bi bi-bullseye"></i> {% if o.fwhm_center_arcsec %}{{ '%.1f'|format(o.fwhm_center_arcsec)|replace('.', ',') }}″{% else %}{{ '%.2f'|format(o.fwhm_center or 0)|replace('.', ',') }} px{% endif %} · {{ '%.2f'|format(o.ratio or 0)|replace('.', ',') }} · ε {{ '%.2f'|format(o.ellipticity or 0)|replace('.', ',') }}</span>{% endif %}</td>
+                <td class="pl-folder" title="{{ s.root }}">{{ s.label or '(Zielordner)' }}
+                    {% if s.duplicate_of %}<br><small class="text-warning" title="Gleiche Lights (Kamera, DATE-OBS, Belichtung) liegen auch in {{ s.duplicate_of }}">Kopie von {{ s.duplicate_of }}</small>{% endif %}</td>
+                <td>{% for d in s.datasets %}<div class="text-nowrap">{{ d.camera or '?' }}{% if d.focal %} · {{ d.focal }} mm{% endif %}</div>{% else %}–{% endfor %}</td>
+                <td class="text-end">{{ s.lights }}{% if s.rejected %}<br><small class="text-body-secondary">+{{ s.rejected }} aussort.</small>{% endif %}{% if s.duplicates %}<br><small class="text-body-secondary">+{{ s.duplicates }} doppelt</small>{% endif %}</td>
+                <td class="text-end text-nowrap">{{ s.exposure_s|duration }}</td>
+                <td class="text-center text-nowrap {% if not s.calibrated and s.lights %}text-warning{% endif %}">
+                    {{ s.flats or '–' }} / {{ s.darks or '–' }} / {{ s.biases or '–' }}</td>
+                <td class="text-center">{% if s.lights %}{{ night_dot(night.get(s.root), s.id) }}{% endif %}</td>
+                <td class="text-center text-nowrap">{% if s.lights %}{{ phd_dot(phd.get(s.root), s.id) }}{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-body-secondary">Keine Rohdaten zu diesem Ziel gefunden.</p>
+    {% endif %}
+</section>
+
+<section class="pl-section pl-folders">
+    <h2>Ordner im Archiv</h2>
+    {% for f in t.folders %}<code>{{ f }}</code>{% endfor %}
+</section>

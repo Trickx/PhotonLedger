@@ -1,0 +1,56 @@
+{% set last = st.last %}
+<div class="pl-indexer">
+    <div class="pl-indexer-status">
+        {% if st.running %}
+            <span class="pl-dot pl-dot-run"></span><b>Läuft gerade</b>
+            {% if st.phase %}<span class="pl-note">Phase: {{ {'scan': 'Dateien lesen', 'derive': 'Ziele und Sessions ableiten', 'nightlogs': 'Nachtprotokolle', 'checks': 'Prüfungen', 'thumbs': 'Vorschaubilder'}.get(st.phase, st.phase) }}</span>{% endif %}
+        {% elif st.requested %}
+            <span class="pl-dot pl-dot-run"></span><b>Lauf angefordert</b> <span class="pl-note">startet in wenigen Sekunden</span>
+        {% elif st.service %}
+            <span class="pl-dot pl-dot-ok"></span><b>Indexer-Dienst aktiv</b> <span class="pl-note">wartet auf den nächsten Lauf</span>
+        {% else %}
+            <span class="pl-dot pl-dot-none"></span><b>Kein Indexer-Dienst aktiv</b>
+            <span class="pl-note">Läufe nur von Hand (im Docker-Betrieb läuft der Dienst „indexer“ automatisch)</span>
+        {% endif %}
+        <form class="ms-auto" method="post" action="{{ url_for('main.status_scan') }}">
+            <button class="btn btn-sm btn-primary" {% if st.running or st.requested %}disabled{% endif %}>
+                <i class="bi bi-arrow-repeat"></i> Jetzt scannen</button>
+        </form>
+    </div>
+    <dl class="pl-indexer-facts">
+        <dt>Photon Ledger</dt>
+        <dd>Version {{ config.APPVERSION or 'local' }}{% if config.GITCOMMIT and config.GITCOMMIT != 'unknown' %}
+            · Commit <code>{{ config.GITCOMMIT[:7] }}</code>{% endif %}</dd>
+        <dt>Intervall</dt>
+        <dd>alle {{ st.interval|duration }} <span class="pl-note">(<code>SCAN_INTERVAL</code> = {{ st.interval }} s, gezählt ab Ende des letzten Laufs)</span></dd>
+        <dt>Letzter Lauf</dt>
+        <dd>{% if last %}
+            {{ last.started|de_date('%d.%m.%Y %H:%M') }}
+            {% if last.finished %}– {{ last.finished|de_date('%H:%M') }} ({{ (last.finished - last.started).total_seconds()|duration }}){% else %}– läuft{% endif %}
+            · <span class="badge {% if last.phase == 'done' %}text-bg-success{% elif last.phase == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ last.phase }}</span>
+            · {{ last.files_seen|num }} Dateien gesehen, {{ last.files_read|num }} gelesen{% if last.errors %}, <span class="text-warning">{{ last.errors }} Fehler</span>{% endif %}
+            {% else %}noch keiner{% endif %}</dd>
+        <dt>Nächster Lauf</dt>
+        <dd>{% if st.running %}nach Ende des laufenden{% elif st.next_run %}{{ st.next_run|de_date('%d.%m.%Y %H:%M') }}{% elif st.service %}gleich{% else %}nicht geplant – nur von Hand{% endif %}</dd>
+        {% set ag = st.airgus %}
+        <dt>Airgus</dt>
+        <dd>{% if not ag.installed %}
+                <span class="pl-dot pl-dot-none"></span>nicht installiert
+                <span class="pl-note">– ASIAIR/NINA-Nachtprotokolle werden nicht ausgewertet, PHD2-Graphen gehen weiter
+                (im Docker-Betrieb mit <code>WITH_AIRGUS=1</code> bauen)</span>
+            {% elif ag.broken %}
+                <span class="pl-dot pl-dot-error"></span><b>installiert, aber nicht nutzbar</b>
+                <span class="pl-note">– Version {{ ag.version }}{% if ag.commit %}, Commit <code>{{ ag.commit }}</code>{% endif %}</span>
+                <ul class="pl-airgus-broken">{% for b in ag.broken %}<li><code>{{ b }}</code></li>{% endfor %}</ul>
+            {% else %}
+                <span class="pl-dot pl-dot-ok"></span>aktiv
+                <span class="pl-note">– Version {{ ag.version }}{% if ag.commit %}, Commit <code>{{ ag.commit }}</code>{% endif %}
+                · {% for k, n in ag.logs|dictsort %}{{ n }} {{ {'asiair': 'ASIAIR', 'nina': 'NINA', 'phd2': 'PHD2', 'ioptron': 'iOptron'}.get(k, k) }}{% if not loop.last %}, {% endif %}{% else %}keine Logs{% endfor %}
+                · {{ ag.analysed }} Sessions analysiert</span>
+            {% endif %}
+            {% if ag.installed and ag.mismatch %}
+                <div class="text-warning small">Installiert ist <code>{{ ag.source }}</code>, festgelegt ist
+                <code>{{ ag.pinned }}</code> (requirements-airgus.txt) – neu installieren bzw. Image neu bauen.</div>
+            {% endif %}</dd>
+    </dl>
+</div>

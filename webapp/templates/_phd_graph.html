@@ -1,0 +1,44 @@
+{% macro n(v, d=2) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% else %}–{% endif %}{% endmacro %}
+<div class="pl-phd-graph">
+    <svg viewBox="0 0 {{ g.W }} {{ g.H }}" role="img" aria-label="Guiding-Abweichung RA und Dec über die Zeit">
+        {% for yt in g.yticks %}
+        <line x1="{{ g.L }}" x2="{{ g.W - g.R }}" y1="{{ yt.y }}" y2="{{ yt.y }}" class="pl-grid {% if loop.index == 3 %}pl-zero{% endif %}"/>
+        <text x="{{ g.L - 6 }}" y="{{ yt.y + 3 }}" text-anchor="end" class="pl-axis">{{ yt.label }}</text>
+        {% endfor %}
+        {% for x in g.dithers %}<line x1="{{ x }}" x2="{{ x }}" y1="{{ g.T }}" y2="{{ g.T + g.plot_h }}" class="pl-dither"/>{% endfor %}
+        {% for pl in g.lines.ra %}<polyline points="{{ pl }}" class="pl-ra"/>{% endfor %}
+        {% for pl in g.lines.dec %}<polyline points="{{ pl }}" class="pl-dec"/>{% endfor %}
+        {% for e in g.exps %}
+        <rect x="{{ e.x }}" y="{{ g.ybar - 8 }}" width="{{ e.w }}" height="7" class="{{ 'pl-exp-bad' if e.rejected else 'pl-exp' }}">
+            <title>{{ e.t }} UTC · {{ e.name }}{% if e.rejected %} · aussortiert/doppelt{% endif %}</title></rect>
+        {% endfor %}
+        <text x="{{ g.L - 6 }}" y="{{ g.ybar - 1 }}" text-anchor="end" class="pl-axis">Lights</text>
+        {% for xt in g.xticks %}<text x="{{ xt.x }}" y="{{ g.H - 4 }}" text-anchor="middle" class="pl-axis">{{ xt.label }}</text>{% endfor %}
+    </svg>
+    <div class="pl-phd-legend">
+        <span><i class="pl-sw pl-sw-ra"></i>RA</span><span><i class="pl-sw pl-sw-dec"></i>Dec</span>
+        <span><i class="pl-sw pl-sw-dither"></i>Dither</span><span><i class="pl-sw pl-sw-exp"></i>Light</span>
+        <span><i class="pl-sw pl-sw-bad"></i>aussortiert</span>
+        <span>Skala ±{{ g.lim }}″ (Ausreißer abgeschnitten) · Zeit in UTC</span>
+    </div>
+
+    <table class="table table-sm pl-table align-middle mt-2">
+        <thead><tr><th>Abschnitt (UTC)</th><th class="text-end">Dauer</th><th class="text-end">Frames</th>
+            <th class="text-end">RMS RA</th><th class="text-end">RMS Dec</th><th class="text-end">RMS gesamt</th>
+            <th class="text-end">Dither</th><th>Pier</th><th></th></tr></thead>
+        <tbody>{% for x in secs %}
+        <tr class="{% if x.frames < 60 %}text-body-secondary{% endif %} {% if x.id == sec_id %}table-active{% endif %}">
+            <td class="text-nowrap">{{ x.start_utc.strftime('%H:%M') }}–{{ x.end_utc.strftime('%H:%M') if x.end_utc else '?' }}</td>
+            <td class="text-end">{{ x.duration_s|duration }}</td>
+            <td class="text-end">{{ x.frames|num }}</td>
+            <td class="text-end">{{ n(x.rms_ra) }}″</td><td class="text-end">{{ n(x.rms_dec) }}″</td>
+            <td class="text-end"><b>{{ n(x.rms_total) }}″</b></td>
+            <td class="text-end">{{ x.dithers }}{% if x.settle_failed %} <span class="text-warning" title="Settling fehlgeschlagen">({{ x.settle_failed }}×)</span>{% endif %}</td>
+            <td>{{ x.pier_side or '–' }}</td>
+            <td class="text-end"><a href="#" hx-get="{{ url_for('main.session_guiding', sid=s.id, sec=x.id) }}" hx-target="closest .pl-phd-body">Zoom</a></td>
+        </tr>{% endfor %}</tbody>
+    </table>
+    {% if sec_id %}<a href="#" hx-get="{{ url_for('main.session_guiding', sid=s.id) }}" hx-target="closest .pl-phd-body">Ganze Nacht anzeigen</a>{% endif %}
+    <p class="pl-note">Grau: kurze Abschnitte (&lt; 60 Frames, z. B. nach Schwenk oder Sternverlust) – nicht in der Zusammenfassung.
+        RMS ohne Settling-Phasen nach Dithern.</p>
+</div>

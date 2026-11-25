@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+{% block title %}{{ label }} · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page">
+    <a class="pl-back" href="{{ url_for('main.status') }}"><i class="bi bi-arrow-left"></i> Indexer</a>
+    <h1>Dateien</h1>
+
+    <div class="pl-kind-tabs">
+        {% for k, (lbl, _, _c) in kinds.items() %}
+        <a class="pl-kind-tab {% if k == kind %}active{% endif %}" href="{{ url_for('main.files', kind=k) }}">
+            {{ lbl }} <small>{{ counts[k]|num }}</small></a>
+        {% endfor %}
+    </div>
+
+    <form class="pl-file-filters" hx-get="{{ url_for('main.files') }}" hx-target="#file-table" hx-select="#file-table"
+          hx-swap="outerHTML" hx-trigger="change, input from:#fq delay:300ms" hx-push-url="true">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <input id="fq" class="form-control form-control-sm" type="search" name="q" value="{{ args.q }}"
+               placeholder="Pfad enthält … (mehrere Wörter = alle müssen vorkommen)" autocomplete="off">
+        {% if kind != 'intermediate' %}
+        <select class="form-select form-select-sm" name="camera">
+            <option value="">Alle Kameras</option>
+            {% for c in cameras %}<option {% if args.camera == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+        {% endif %}
+        {% if kind == 'intermediate' %}
+        <select class="form-select form-select-sm" name="rule" title="Regel">
+            <option value="">Alle Regeln (gruppiert)</option>
+            {% for code, lbl, sev in rules %}<option value="{{ code }}" {% if rule == code %}selected{% endif %}>{{ lbl }} ({{ rule_counts[code]|num }})</option>{% endfor %}
+        </select>
+        {% endif %}
+        {% if kind in ('light', 'flat', 'dark', 'bias') %}
+        <select class="form-select form-select-sm" name="state">
+            <option value="">Alle</option>
+            <option value="ok" {% if args.state == 'ok' %}selected{% endif %}>Verwendet</option>
+            <option value="rejected" {% if args.state == 'rejected' %}selected{% endif %}>Aussortiert</option>
+            {% if kind == 'light' %}<option value="duplicate" {% if args.state == 'duplicate' %}selected{% endif %}>Doppelt</option>{% endif %}
+        </select>
+        {% endif %}
+    </form>
+
+    <div id="file-table">
+    {% if groups %}
+        <p class="pl-note mb-2">{{ total|num }} Datei{{ 'en' if total != 1 }}, gruppiert nach der wichtigsten Regel. Eine Datei kann mehrere Befunde haben.</p>
+        {% for g in groups %}
+        <details class="pl-rule-group pl-rule-{{ g.sev }}" {% if g.sev != 'ok' %}open{% endif %}>
+            <summary><span class="pl-rule-badge pl-rule-badge-{{ g.sev }}">{{ {'warning': 'Warnung', 'hint': 'Hinweis', 'ok': 'in Ordnung'}[g.sev] }}</span>
+                <b>{{ g.label }}</b> <span class="pl-count">{{ g.total|num }}</span></summary>
+            <div class="table-responsive">
+            <table class="table table-sm pl-table pl-file-table align-middle">
+                <thead><tr><th>Pfad</th><th class="text-end">Größe</th><th>Geändert</th><th>Befunde</th></tr></thead>
+                <tbody>{% with rows = g.rows, page = 1, more = false %}{% include "_files_rows.html" %}{% endwith %}</tbody>
+            </table>
+            </div>
+            {% if g.total > g.rows|length %}<a class="pl-note" href="{{ url_for('main.files', kind=kind, q=args.q, rule=g.code) }}">Alle {{ g.total|num }} anzeigen</a>{% endif %}
+        </details>
+        {% endfor %}
+    {% else %}
+        <p class="pl-note mb-2">{{ total|num }} Datei{{ 'en' if total != 1 }}, sortiert nach Pfad{% if total > rows|length %} – weitere unten nachladen{% endif %}</p>
+        <div class="table-responsive">
+        <table class="table table-sm pl-table pl-file-table align-middle">
+            <thead><tr>
+                <th>Pfad</th>
+                {% if kind == 'error' %}<th>Fehler</th>
+                {% elif kind == 'intermediate' %}<th class="text-end">Größe</th><th>Geändert</th><th>Befunde</th>{% else %}
+                <th>Kamera</th><th class="text-end">Belichtung</th><th>Aufnahme (UTC)</th>
+                <th class="text-end">Temp.</th>{% if kind == 'ignored' %}<th>Grund</th>{% else %}<th>Status</th>{% endif %}
+                {% endif %}
+            </tr></thead>
+            <tbody id="file-rows">{% include "_files_rows.html" %}</tbody>
+        </table>
+        </div>
+    {% endif %}
+    </div>
+</div>
+{% endblock %}

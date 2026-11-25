@@ -1,0 +1,12 @@
+{
+  "SECRET_KEY": "change-me",
+  "ARCHIVE_PATH": "/path/to/Astro",
+  "DATA_PATH": "./data",
+  "SCAN_INTERVAL": 900,
+  "FOCAL_TOLERANCE": 0.03,
+  "NIGHT_OFFSET_HOURS": 12,
+  "MAX_VERSIONS_PER_DIR": 30,
+  "IGNORE_DIRS": ["kollimation", "vergleich*"],
+  "THUMB_SIZE": 480,
+  "PREVIEW_SIZE": 2000
+}

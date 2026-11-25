@@ -1,0 +1,104 @@
+# Build the Docker image on every push and publish it to the GitHub Container Registry.
+#
+#   push to main      -> ghcr.io/<owner>/photonledger:latest and :sha-<commit>
+#   tag v1.2.3        -> ghcr.io/<owner>/photonledger:1.2.3 and :1.2
+#   other branches    -> tests and image build only (nothing is published)
+#
+# The tests run first; the image is built for amd64 (most NAS) and arm64 (Apple Silicon, ARM NAS).
+name: Docker image
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            requirements-airgus.txt
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -r requirements-airgus.txt
+      - name: Run tests
+        run: python -m pytest -q
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name (registry names must be lower case)
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/photonledger" >> "$GITHUB_OUTPUT"
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "app=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=Photon Ledger
+            org.opencontainers.image.description=Astrophotography archive: sessions from the folder structure
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GITCOMMIT=${{ github.sha }}
+            APPVERSION=${{ steps.version.outputs.app }}
+            WITH_AIRGUS=1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

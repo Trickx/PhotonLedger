@@ -1,0 +1,45 @@
+<div class="pl-night">
+    {% if g %}
+    <svg viewBox="0 0 {{ g.W }} {{ g.H }}" role="img" aria-label="Zeitleiste der Nacht">
+        {% for tk in g.ticks %}
+        <line x1="{{ tk.x }}" x2="{{ tk.x }}" y1="4" y2="{{ g.H - 16 }}" class="pl-grid"/>
+        <text x="{{ tk.x }}" y="{{ g.H - 4 }}" text-anchor="middle" class="pl-axis">{{ tk.label }}</text>
+        {% endfor %}
+        {% for st in g.stalls %}<rect x="{{ st.x }}" y="4" width="{{ st.w }}" height="{{ g.H - 20 }}" class="pl-stall"><title>Aufnahme hing</title></rect>{% endfor %}
+        {% for ln in g.lanes %}
+        <text x="{{ g.L - 8 }}" y="{{ ln.y + 11 }}" text-anchor="end" class="pl-axis">{{ ln.name }}</text>
+        {% for sg in ln.segs %}<rect x="{{ sg.x }}" y="{{ ln.y + 2 }}" width="{{ sg.w }}" height="11" rx="2"
+            class="{{ 'pl-seg-off' if sg.off else 'pl-seg' }}"><title>{{ ln.name }}{% if sg.off %} aus{% endif %} · {{ sg.t }}</title></rect>{% endfor %}
+        {% endfor %}
+        <text x="{{ g.L - 8 }}" y="{{ g.y_exp + 11 }}" text-anchor="end" class="pl-axis">Belichtungen</text>
+        {% for x in g.exps %}<line x1="{{ x }}" x2="{{ x }}" y1="{{ g.y_exp + 2 }}" y2="{{ g.y_exp + 13 }}" class="pl-exp-tick"/>{% endfor %}
+        <text x="{{ g.L - 8 }}" y="{{ g.y_alert + 11 }}" text-anchor="end" class="pl-axis">Meldungen</text>
+        {% for al in g.alerts %}<circle cx="{{ al.x }}" cy="{{ g.y_alert + 7 }}" r="5" class="pl-alert-{{ 'high' if al.level >= 2 else 'warn' }}">
+            <title>{{ al.t }} UTC · {{ al.title }}</title></circle>{% endfor %}
+    </svg>
+    {% endif %}
+
+    {% set sm = a.summary %}
+    <div class="pl-tiles pl-tiles-small mt-2">
+        <div class="pl-tile"><b>{{ sm.exposures }}</b><span>Belichtungen gestartet</span></div>
+        <div class="pl-tile"><b>{{ sm.flips_ok }}/{{ sm.flips }}</b><span>Meridian-Flips ok</span></div>
+        <div class="pl-tile"><b>{{ sm.centering - sm.centering_failed }}/{{ sm.centering }}</b><span>Auto-Center ok</span></div>
+        <div class="pl-tile"><b>{{ sm.autofocus - sm.autofocus_failed }}/{{ sm.autofocus }}</b><span>Autofokus ok</span></div>
+        <div class="pl-tile"><b>{{ sm.star_lost }}</b><span>Leitstern verloren</span></div>
+        <div class="pl-tile"><b>{{ sm.settle_failed }}</b><span>Settle-Fehler</span></div>
+    </div>
+
+    {% if a.alerts %}
+    <table class="table table-sm pl-table align-middle mt-3">
+        <thead><tr><th>Zeit (UTC)</th><th>Stufe</th><th>Meldung</th><th>Details</th></tr></thead>
+        <tbody>{% for al in a.alerts %}{% set lbl, color = sev.get(al.severity, (al.severity, 'secondary')) %}
+        <tr><td class="text-nowrap">{{ al.time[11:16] }}</td>
+            <td><span class="badge text-bg-{{ color }}">{{ lbl }}</span></td>
+            <td>{{ al.title }}</td><td class="small text-body-secondary">{{ al.message }}</td></tr>
+        {% endfor %}</tbody>
+    </table>
+    {% else %}<p class="pl-note mt-2">Airgus hat in dieser Nacht nichts zu beanstanden.</p>{% endif %}
+    <p class="pl-note">Ausgewertet mit <a href="https://github.com/Trickx/Airgus" target="_blank" rel="noopener">Airgus</a>
+        aus: {% for l in a.logs %}<code>{{ l.path.rsplit('/', 1)[-1] }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+        Zeiten in UTC (Logs in Ortszeit, umgerechnet).</p>
+</div>
