@@ -5,9 +5,6 @@ Ein Logbuch für gesammeltes Licht: Photon Ledger liest ein Astrofoto-Archiv
 und der FITS-Header und zeigt pro Objekt Belichtungszeit, Sessions, Filter,
 Datensätze und die bearbeiteten Versionen.
 
-Technik wie bei *vds-sternwarte*: Python 3.14, Flask 3, Flask-SQLAlchemy /
-Flask-Migrate (Alembic), SQLite, Jinja + Bootstrap 5.3 + htmx, waitress.
-
 ## Ordnerstruktur
 
 Ausführlich mit Beispielen für eine und mehrere Sessions je Objekt: **[docs/ordnerstruktur.md](docs/ordnerstruktur.md)**.
