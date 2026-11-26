@@ -233,6 +233,28 @@ Danach: `http://<host>:5080`
   quittierte Prüfungen. Zurückspielen: Container stoppen, Kopie als `data/photonledger.db`
   ablegen (vorher `photonledger.db-wal` und `-shm` löschen), Container starten.
 
+### Login
+
+Ohne Einstellung ist Photon Ledger offen – im Heimnetz oft genug. Mit Login (ein Benutzer):
+
+```bash
+python -c 'import secrets; print(secrets.token_hex(32))'      # neuer SECRET_KEY
+docker compose run --rm -it web python -m webapp.auth          # fragt das Passwort, gibt den Hash aus
+```
+
+```bash
+# .env
+FLASK_SECRET_KEY=<der neue Schlüssel>
+FLASK_AUTH_USER=sven
+FLASK_AUTH_PASSWORD_HASH='scrypt:32768:8:1$…'                  # einfache Anführungszeichen behalten
+#FLASK_AUTH_PUBLIC_READ=true                                   # ansehen ohne Login, ändern mit
+```
+
+Danach `docker compose up -d`. Alle Seiten verlangen dann die Anmeldung (Sitzung bis zu 30 Tage,
+„Abmelden“ unten in der Navigation); offen bleibt nur `/healthz` für den Docker-Healthcheck.
+Ohne gesetzten `SECRET_KEY` startet die App mit Login nicht – mit dem Standardwert ließen sich
+Sitzungen fälschen. Für den Zugriff von außen gehört zusätzlich HTTPS davor (Reverse-Proxy).
+
 ### Mehrere Archive
 
 Liegt die Sammlung auf mehreren Freigaben oder Platten, bekommt jedes Archiv einen
@@ -290,6 +312,9 @@ cp config.json-dist config.json            # ARCHIVE_PATH setzen
 | `MAX_VERSIONS_PER_DIR` | `30` | Ordner mit mehr Bildern sind keine Versionen |
 | `IGNORE_DIRS` | `[]` | zusätzlich zu ignorierende Ordnernamen (Glob) |
 | `BACKUP_KEEP` | `14` | Tageskopien der Datenbank in `data/backups` (`0` = keine) |
+| `AUTH_USER` | – | Benutzer für den Login; ohne ihn ist alles offen (siehe *Login*) |
+| `AUTH_PASSWORD_HASH` | – | Passwort-Hash (`python -m webapp.auth`) |
+| `AUTH_PUBLIC_READ` | `false` | `true` = ansehen ohne Login, nur Änderungen brauchen ihn |
 
 ## Lizenz
 

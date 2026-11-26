@@ -49,4 +49,6 @@ def create_app(config_class=Config):
 
     app.register_blueprint(main)
     register_filters(app)
+    from webapp import auth
+    auth.init_app(app)
     return app

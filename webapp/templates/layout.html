@@ -11,7 +11,8 @@
     <script defer src="{{ url_for('static', filename='htmx-2.0.3.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 </head>
-{% set dv = data_version() if not is_htmx else none %}
+{% set login_page = request.endpoint == 'auth.login' %}
+{% set dv = data_version() if not is_htmx and not login_page else none %}
 <body data-version-url="{{ url_for('main.status_version') }}"{% if dv %} data-run="{{ dv.run }}" data-data="{{ dv.data }}"{% endif %}
       data-page="{{ request.endpoint }}">
 <div class="pl-app">
@@ -20,6 +21,7 @@
             <i class="bi bi-journal-richtext"></i><span>Photon Ledger</span>
         </a>
         {% set ep = request.endpoint or '' %}
+        {% if not login_page %}
         <a class="pl-nav-link {% if ep in ('main.index', 'main.target') %}active{% endif %}" href="{{ url_for('main.index') }}">
             <i class="bi bi-globe2"></i><span>Katalog</span></a>
         <a class="pl-nav-link {% if ep == 'main.sessions' %}active{% endif %}" href="{{ url_for('main.sessions') }}">
@@ -36,8 +38,16 @@
         <a class="pl-nav-link {% if ep == 'main.status' %}active{% endif %}" href="{{ url_for('main.status') }}">
             <i class="bi bi-activity"></i><span>Indexer</span>
             {% set ip = indexer_problem() %}{% if ip %}<span class="pl-nav-badge" title="Letzter Indexlauf fehlgeschlagen">!</span>{% endif %}</a>
+        {% endif %}
 
         <div class="pl-nav-bottom dropdown">
+            {% if auth_enabled and not login_page %}
+            <div class="pl-nav-user">
+                {% if auth_user %}<i class="bi bi-person-circle"></i><span>{{ auth_user }}</span>
+                    · <a href="{{ url_for('auth.logout') }}">Abmelden</a>
+                {% else %}<i class="bi bi-person"></i><a href="{{ url_for('auth.login', next=request.full_path.rstrip('?')) }}">Anmelden</a>{% endif %}
+            </div>
+            {% endif %}
             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="bd-theme"
                     data-bs-toggle="dropdown" aria-expanded="false">
                 <svg class="theme-icon-active" width="14" height="14" fill="currentColor"><use href="#circle-half"></use></svg>
@@ -92,7 +102,11 @@
     const toast = document.getElementById('pl-update'), text = document.getElementById('pl-update-text');
     const tick = async () => {
         let v;
-        try { v = await (await fetch(url, {cache: 'no-store'})).json(); } catch (e) { return schedule(30000); }
+        try {
+            const r = await fetch(url, {cache: 'no-store'});
+            if (!r.ok) return schedule(60000);            // e.g. logged out
+            v = await r.json();
+        } catch (e) { return schedule(30000); }
         const finished = String(v.run) !== run;
         if (body.dataset.page === 'main.status') {
             if (finished || (wasRunning && !v.running)) return location.reload();

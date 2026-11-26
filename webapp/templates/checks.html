@@ -48,11 +48,11 @@
         {% set label, icon, color = SEVERITY[i.severity] %}
         <div class="pl-issue pl-issue-{{ i.severity }}">
             <i class="bi {{ icon }} text-{{ color }}" title="{{ label }}"></i>
-            <form class="pl-issue-ack" method="post" action="{{ url_for('main.check_unack' if show_ack else 'main.check_ack', iid=i.id) }}">
+            {% if may_change %}<form class="pl-issue-ack" method="post" action="{{ url_for('main.check_unack' if show_ack else 'main.check_ack', iid=i.id) }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
                 <button type="submit" class="btn btn-sm btn-link" title="{% if show_ack %}Wieder als offen anzeigen{% else %}Als bekannt quittieren – ausblenden, bis sich die Meldung ändert{% endif %}">
                     <i class="bi {% if show_ack %}bi-arrow-counterclockwise{% else %}bi-check2{% endif %}"></i> {% if show_ack %}wieder anzeigen{% else %}quittieren{% endif %}</button>
-            </form>
+            </form>{% endif %}
             <div class="pl-issue-body">
                 <div class="pl-issue-msg">{{ i.message }}{% if i.count > 1 %} <span class="pl-count">· {{ i.count }} Dateien</span>{% endif %}</div>
                 <div class="pl-issue-meta">

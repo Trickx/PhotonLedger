@@ -30,6 +30,10 @@ VERSION = _version()
 
 class Config:
     SECRET_KEY = config.get("SECRET_KEY", "change-me")
+    # optional login (see webapp/auth.py): without AUTH_USER everything stays open
+    AUTH_USER = config.get("AUTH_USER")
+    AUTH_PASSWORD_HASH = config.get("AUTH_PASSWORD_HASH")
+    AUTH_PUBLIC_READ = config.get("AUTH_PUBLIC_READ", False)
     # read-only archive root and writable data folder (database, thumbnails)
     ARCHIVE_PATH = config.get("ARCHIVE_PATH", "./archive")
     # several archives: {"<name>": "<path>", …}; stored paths then start with the name (ARCHIVE_PATH is unused)

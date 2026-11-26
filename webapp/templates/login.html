@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block title %}Anmelden · Photon Ledger{% endblock %}
+{% block content %}
+<div class="pl-page pl-login">
+    <h1><i class="bi bi-journal-richtext"></i> Photon Ledger</h1>
+    <form method="post" action="{{ url_for('auth.login') }}" class="pl-login-form">
+        <input type="hidden" name="next" value="{{ next or '' }}">
+        <label class="form-label small" for="user">Benutzer</label>
+        <input class="form-control" id="user" name="user" autocomplete="username" autofocus required>
+        <label class="form-label small mt-2" for="password">Passwort</label>
+        <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+        <div class="form-check mt-2 small">
+            <input class="form-check-input" type="checkbox" id="remember" name="remember" value="1" checked>
+            <label class="form-check-label" for="remember">Angemeldet bleiben (30 Tage)</label>
+        </div>
+        <button class="btn btn-primary mt-3 w-100" type="submit">Anmelden</button>
+    </form>
+</div>
+{% endblock %}

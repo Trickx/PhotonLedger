@@ -850,3 +850,118 @@ def test_severity_counts_follow_group(app):
     assert re.search(r"Hinweis \((\d+)\)", page).group(1) == str(n)
     shown = c.get(f"/checks?g={group}&s=hint").data.decode().count('class="pl-issue pl-issue-hint"')
     assert shown == n
+
+
+def test_stop_during_run_is_recorded(app, monkeypatch):
+    """SIGTERM (docker stop) during an index pass ends it at once and marks the run as interrupted."""
+    from webapp.archive import scanner
+    from webapp.models import IndexRun
+
+    def stopped(*_):
+        raise SystemExit(0)
+    monkeypatch.setattr(scanner, "scan", stopped)
+    with app.app_context():
+        with pytest.raises(SystemExit):
+            run_once(app)
+        run = db.session.query(IndexRun).order_by(IndexRun.id.desc()).first()
+        assert run.phase == "failed" and run.finished and "abgebrochen" in run.message
+        monkeypatch.undo()
+        assert run_once(app).phase == "done"                     # lock released
+
+
+def test_indexer_stops_on_sigterm(tmp_path):
+    """The indexer service exits within a moment on SIGTERM instead of waiting for SIGKILL."""
+    import json
+    import signal
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    (tmp_path / "archive").mkdir()
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"ARCHIVE_PATH": str(tmp_path / "archive"), "DATA_PATH": str(tmp_path / "data"),
+                               "SCAN_INTERVAL": 3600}))
+    root = Path(__file__).parents[1]
+    env = {**os.environ, "PHOTONLEDGER_CONFIG": str(cfg)}
+    subprocess.run([sys.executable, "-c", "from webapp import create_app, db\n"
+                    "app = create_app()\nwith app.app_context(): db.create_all()"], cwd=root, env=env, check=True)
+    p = subprocess.Popen([sys.executable, "-m", "webapp.indexer"], cwd=root, env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    hb = tmp_path / "data" / "indexer.heartbeat"
+    try:
+        for _ in range(200):                                      # wait until it sleeps until the next scan
+            if hb.exists() and '"waiting"' in hb.read_text():
+                break
+            assert p.poll() is None, "indexer exited early"
+            time.sleep(0.05)
+        else:
+            raise AssertionError("indexer did not reach the waiting state")
+        t0 = time.monotonic()
+        p.send_signal(signal.SIGTERM)
+        assert p.wait(timeout=5) == 0
+        assert time.monotonic() - t0 < 2
+    finally:
+        if p.poll() is None:
+            p.kill()
+
+
+def _enable_login(app, public_read=False):
+    from werkzeug.security import generate_password_hash
+    app.config.update(AUTH_USER="sven", AUTH_PASSWORD_HASH=generate_password_hash("geheim-123"),
+                      AUTH_PUBLIC_READ=public_read)
+
+
+def test_login(app, monkeypatch):
+    """With AUTH_USER every page needs the login (except /healthz); wrong passwords are refused."""
+    import webapp.auth
+    monkeypatch.setattr(webapp.auth.time, "sleep", lambda s: None)
+    c = app.test_client()
+    assert c.get("/").status_code == 200                          # no AUTH_USER: open as before
+    _enable_login(app)
+    r = c.get("/sessions?x=1")
+    assert r.status_code == 302 and "/login?next=/sessions?x%3D1" in r.headers["Location"]
+    assert c.get("/healthz").status_code == 200
+    assert c.get("/status/version").status_code == 401             # live update: JSON, no redirect
+    assert c.get("/sessions", headers={"HX-Request": "true"}).headers.get("HX-Redirect")
+    assert c.post("/status/scan").status_code == 302
+    page = c.get("/login").data.decode()
+    assert 'name="password"' in page and "Prüfungen" not in page   # no navigation before the login
+    r = c.post("/login", data={"user": "sven", "password": "falsch", "next": "/sessions"})
+    assert r.status_code == 200 and "Benutzer oder Passwort falsch" in r.data.decode()
+    r = c.post("/login", data={"user": "sven", "password": "geheim-123", "next": "https://evil.example/x"})
+    assert r.status_code == 302 and r.headers["Location"] == "/"   # no redirect to other sites
+    r = c.post("/login", data={"user": "sven", "password": "geheim-123", "next": "/sessions"})
+    assert r.headers["Location"] == "/sessions"
+    page = c.get("/sessions").data.decode()
+    assert "Abmelden" in page and "sven" in page
+    c.get("/logout")
+    assert c.get("/sessions").status_code == 302
+
+
+def test_login_public_read(app):
+    """AUTH_PUBLIC_READ: everyone may look, changes need the login."""
+    _enable_login(app, public_read=True)
+    c = app.test_client()
+    assert c.get("/checks").status_code == 200
+    assert "quittieren" not in c.get("/checks").data.decode()     # no change buttons without login
+    assert "Anmelden" in c.get("/").data.decode()
+    with app.app_context():
+        iid = db.session.query(Issue).first().id
+    r = c.post(f"/checks/{iid}/ack", headers={"Referer": "http://localhost/checks"})
+    assert r.status_code == 302 and "/login?next=" in r.headers["Location"]
+    with app.app_context():
+        from webapp.models import IssueAck
+        assert not db.session.query(IssueAck).count()
+
+
+def test_login_needs_secret_key():
+    from webapp.config import Config
+
+    class C(Config):
+        AUTH_USER = "sven"
+        AUTH_PASSWORD_HASH = "x"
+        SECRET_KEY = "change-me"
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        create_app(C)
