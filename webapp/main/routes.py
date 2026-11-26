@@ -309,8 +309,11 @@ def checks():
     shown.sort(key=lambda i: (order.get(i.severity, 9), _check_group(i.code), i.code,
                               i.target.name if i.target else "", i.session_root or ""))
     totals = {k: sum(c[k] for c in counts.values()) for k in order}
+    # the severity buttons count what they would show: within the selected group
+    in_group = counts.get(group, totals) if group else totals
     return render_template("checks.html", issues=shown, groups=CHECK_GROUPS, counts=counts, totals=totals,
-                           group=group, sev=sev, group_of=_check_group, show_ack=show_ack, n_acked=len(acked))
+                           group=group, sev=sev, group_of=_check_group, show_ack=show_ack, n_acked=len(acked),
+                           in_group=in_group)
 
 
 FILE_KINDS = {

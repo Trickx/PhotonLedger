@@ -835,3 +835,18 @@ def test_version(app):
     assert VERSION == (Path(__file__).parents[1] / "VERSION").read_text().strip()
     assert VERSION.count(".") == 2
     assert app.config["APPVERSION"] in app.test_client().get("/status").data.decode()
+
+
+def test_severity_counts_follow_group(app):
+    """The severity buttons count the issues of the selected group, not of all groups."""
+    import re
+    c = app.test_client()
+    with app.app_context():
+        from webapp.main.routes import _check_group
+        hints = [i for i in db.session.query(Issue).filter_by(severity="hint")]
+        group = _check_group(hints[0].code)
+        n = sum(1 for i in hints if _check_group(i.code) == group)
+    page = c.get(f"/checks?g={group}").data.decode()
+    assert re.search(r"Hinweis \((\d+)\)", page).group(1) == str(n)
+    shown = c.get(f"/checks?g={group}&s=hint").data.decode().count('class="pl-issue pl-issue-hint"')
+    assert shown == n

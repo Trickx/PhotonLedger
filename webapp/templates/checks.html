@@ -28,7 +28,7 @@
         <a class="btn btn-sm {% if not sev %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('main.checks', g=group, ack=ak) }}">Alle Stufen</a>
         {% for key, (label, icon, color) in SEVERITY.items() %}
         <a class="btn btn-sm {% if sev == key %}btn-{{ color }}{% else %}btn-outline-{{ color }}{% endif %}"
-           href="{{ url_for('main.checks', g=group, s=key, ack=ak) }}"><i class="bi {{ icon }}"></i> {{ label }} ({{ totals[key] }})</a>
+           href="{{ url_for('main.checks', g=group, s=key, ack=ak) }}"><i class="bi {{ icon }}"></i> {{ label }} ({{ in_group[key] }})</a>
         {% endfor %}
         {% if show_ack %}
         <a class="btn btn-sm btn-secondary ms-auto" href="{{ url_for('main.checks', g=group, s=sev) }}"><i class="bi bi-arrow-left"></i> Offene Meldungen</a>
