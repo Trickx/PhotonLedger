@@ -960,8 +960,35 @@ def test_login_needs_secret_key():
 
     class C(Config):
         AUTH_USER = "sven"
-        AUTH_PASSWORD_HASH = "x"
+        AUTH_PASSWORD_HASH = "scrypt:32768:8:1$salt$digest"
         SECRET_KEY = "change-me"
         SQLALCHEMY_DATABASE_URI = "sqlite://"
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         create_app(C)
+
+
+def test_password_hash_forms(app, monkeypatch):
+    """The hash survives .env: base64 form without "$", quotes are dropped, a damaged hash stops the start."""
+    import webapp.auth as auth
+    from werkzeug.security import check_password_hash, generate_password_hash
+    monkeypatch.setattr(auth.time, "sleep", lambda s: None)
+    h = generate_password_hash("geheim-123")
+    enc = auth.encode_hash(h)
+    assert enc.startswith("b64:") and "$" not in enc
+    assert check_password_hash(auth.stored_hash(enc), "geheim-123")
+    assert auth.stored_hash(f"'{h}'") == h                         # quotes kept literally by the shell
+    assert auth.stored_hash(h.split("$")[0]) is None               # "$…" replaced by docker compose
+    from webapp.config import Config
+
+    class C(Config):
+        AUTH_USER = "sven"
+        AUTH_PASSWORD_HASH = h.split("$")[0]
+        SECRET_KEY = "x" * 32
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+    with pytest.raises(RuntimeError, match="beschädigt"):
+        create_app(C)
+    C.AUTH_PASSWORD_HASH = enc                                    # login works with the base64 form
+    a = create_app(C)
+    c = a.test_client()
+    r = c.post("/login", data={"user": "sven", "password": "geheim-123", "next": "/healthz"})
+    assert r.status_code == 302 and r.headers["Location"] == "/healthz"

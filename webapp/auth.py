@@ -8,6 +8,7 @@ With a login the SECRET_KEY must be set (it signs the session cookie).
 """
 from __future__ import annotations
 
+import base64
 import getpass
 import hmac
 import sys
@@ -42,10 +43,36 @@ def may_change() -> bool:
     return not enabled() or logged_in()
 
 
+B64 = "b64:"
+
+
+def encode_hash(h: str) -> str:
+    """Werkzeug hashes contain "$" (which docker compose replaces in .env): written base64-encoded."""
+    return B64 + base64.urlsafe_b64encode(h.encode()).decode().rstrip("=")
+
+
+def stored_hash(value) -> str | None:
+    """The hash from the settings: base64 form (b64:…) or plain werkzeug form; surrounding quotes are
+    dropped. None if it is missing or damaged (e.g. "$…" parts replaced by docker compose)."""
+    if not value:
+        return None
+    v = str(value).strip().strip("'\"")
+    if v.startswith(B64):
+        b = v[len(B64):]
+        try:
+            v = base64.urlsafe_b64decode(b + "=" * (-len(b) % 4)).decode()
+        except (ValueError, UnicodeDecodeError):
+            return None
+    method, _, rest = v.partition("$")
+    salt, _, digest = rest.partition("$")
+    return v if method and salt and digest else None
+
+
 def init_app(app) -> None:
     if app.config.get("AUTH_USER"):
-        if not app.config.get("AUTH_PASSWORD_HASH"):
-            raise RuntimeError("AUTH_USER ist gesetzt, aber AUTH_PASSWORD_HASH fehlt "
+        app.config["AUTH_PASSWORD_HASH"] = stored_hash(app.config.get("AUTH_PASSWORD_HASH"))
+        if not app.config["AUTH_PASSWORD_HASH"]:
+            raise RuntimeError("AUTH_USER ist gesetzt, aber AUTH_PASSWORD_HASH fehlt oder ist beschädigt "
                                "(erzeugen mit: python -m webapp.auth)")
         if (app.config.get("SECRET_KEY") or DEFAULT_SECRET) == DEFAULT_SECRET:
             raise RuntimeError("Mit Login muss SECRET_KEY gesetzt sein (nicht „change-me“), "
@@ -126,8 +153,8 @@ def main() -> None:
     if len(pw) < 8:
         sys.exit("Bitte mindestens 8 Zeichen.")
     h = generate_password_hash(pw)
-    print("In .env eintragen (einfache Anführungszeichen behalten, das $ darf nicht ersetzt werden):")
-    print(f"FLASK_AUTH_PASSWORD_HASH='{h}'")
+    print("In .env eintragen:")
+    print(f"FLASK_AUTH_PASSWORD_HASH={encode_hash(h)}")
 
 
 if __name__ == "__main__":

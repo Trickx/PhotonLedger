@@ -238,22 +238,29 @@ Danach: `http://<host>:5080`
 Ohne Einstellung ist Photon Ledger offen – im Heimnetz oft genug. Mit Login (ein Benutzer):
 
 ```bash
-python -c 'import secrets; print(secrets.token_hex(32))'      # neuer SECRET_KEY
-docker compose run --rm -it web python -m webapp.auth          # fragt das Passwort, gibt den Hash aus
+openssl rand -hex 32                                           # neuer SECRET_KEY
+docker compose run --rm -it web python -m webapp.auth          # fragt das Passwort, gibt eine Zeile aus
 ```
+
+Der zweite Befehl ändert `.env` nicht: Die ausgegebene Zeile `FLASK_AUTH_PASSWORD_HASH=b64:…`
+in `.env` kopieren (ohne `$`, daher ohne Anführungszeichen; ältere Hashes `'scrypt:…$…$…'`
+gehen weiter).
 
 ```bash
 # .env
 FLASK_SECRET_KEY=<der neue Schlüssel>
 FLASK_AUTH_USER=sven
-FLASK_AUTH_PASSWORD_HASH='scrypt:32768:8:1$…'                  # einfache Anführungszeichen behalten
+FLASK_AUTH_PASSWORD_HASH=b64:…                                 # Zeile aus python -m webapp.auth
 #FLASK_AUTH_PUBLIC_READ=true                                   # ansehen ohne Login, ändern mit
 ```
 
 Danach `docker compose up -d`. Alle Seiten verlangen dann die Anmeldung (Sitzung bis zu 30 Tage,
 „Abmelden“ unten in der Navigation); offen bleibt nur `/healthz` für den Docker-Healthcheck.
-Ohne gesetzten `SECRET_KEY` startet die App mit Login nicht – mit dem Standardwert ließen sich
-Sitzungen fälschen. Für den Zugriff von außen gehört zusätzlich HTTPS davor (Reverse-Proxy).
+Mit `FLASK_AUTH_PUBLIC_READ=true` geht beides parallel: `http://<host>:5080/` zeigt alles ohne
+Passwort (nur lesen), **Anmelden** unten in der Navigation erlaubt Änderungen.
+Ohne gesetzten `SECRET_KEY` oder mit fehlendem bzw. beschädigtem Hash startet die App mit Login
+nicht und nennt den Grund im Log (`docker compose logs web`) – mit dem Standardschlüssel ließen
+sich Sitzungen fälschen. Für den Zugriff von außen gehört zusätzlich HTTPS davor (Reverse-Proxy).
 
 ### Mehrere Archive
 
