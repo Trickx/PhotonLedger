@@ -17,7 +17,7 @@ if ! ( : > "$probe" ) 2>/dev/null; then
   exit 1
 fi
 rm -f "$probe"
-if [ ! -r "${FLASK_ARCHIVE_PATH:-/archive}" ]; then
+if [ -z "$FLASK_ARCHIVES" ] && [ ! -r "${FLASK_ARCHIVE_PATH:-/archive}" ]; then
   echo "WARNUNG: Archiv ${FLASK_ARCHIVE_PATH:-/archive} ist für $(id -u):$(id -g) nicht lesbar - ARCHIVE_PATH und Rechte prüfen."
 fi
 

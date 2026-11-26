@@ -109,6 +109,11 @@ body { background: var(--bs-body-bg); }
 .pl-issue-warning { border-left-color: var(--bs-warning); }
 .pl-issue-hint { border-left-color: var(--bs-info); }
 .pl-issue > i { font-size: 1rem; margin-top: 2px; }
+.pl-issue { position: relative; }
+.pl-issue-ack { position: absolute; top: 4px; right: 6px; order: 3; }
+.pl-issue-ack .btn { font-size: .75rem; padding: 0 4px; color: var(--bs-secondary-color); text-decoration: none; opacity: .55; }
+.pl-issue:hover .pl-issue-ack .btn, .pl-issue-ack .btn:focus { opacity: 1; }
+.pl-issue-body { padding-right: 90px; }
 .pl-issue-msg { font-size: .9rem; }
 .pl-issue-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .8rem; margin-top: 2px; }
 .pl-issue-meta code { color: var(--bs-secondary-color); }
@@ -380,6 +385,7 @@ ul.pl-issue-hint { padding-left: 18px; }
 .pl-dot-ok { background: #3fb96d; box-shadow: 0 0 0 2px rgba(63, 185, 109, .2); }
 .pl-dot-none { background: var(--pl-accent); box-shadow: 0 0 0 2px var(--pl-accent-soft); }
 .pl-dot-error { background: #ff5c5c; box-shadow: 0 0 0 2px rgba(255, 92, 92, .2); }
+.pl-dot-hint { background: #4fc3f7; box-shadow: 0 0 0 2px rgba(79, 195, 247, .2); }
 .pl-dot-rms { display: block; font-size: .7rem; color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
 .pl-dot-legend { display: inline-flex; gap: 12px; font-size: .78rem; color: var(--bs-secondary-color); }
 .pl-dot-legend .pl-dot { margin-right: 4px; cursor: default; }
@@ -430,3 +436,13 @@ ul.pl-issue-hint { padding-left: 18px; }
 .pl-usage .pl-bar-row { grid-template-columns: 1fr 70px; }
 .pl-usage-unassigned td { color: var(--bs-secondary-color); }
 .pl-path { word-break: break-all; }
+.pl-pairs { margin-top: 4px; }
+.pl-pairs > summary { cursor: pointer; margin: 0; }
+.pl-pair-list { font-size: .78rem; margin: 6px 0 0; padding-left: 22px; }
+.pl-pair-list li { margin-bottom: 6px; }
+.pl-pair-list code { display: block; }
+.pl-pair-b { color: var(--bs-secondary-color); }
+.pl-update-toast { position: fixed; right: 16px; bottom: 16px; z-index: 1080; display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: var(--pl-radius); background: var(--bs-body-bg); border: 1px solid var(--pl-accent);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .25); font-size: .85rem; }
+.pl-update-toast[hidden] { display: none; }

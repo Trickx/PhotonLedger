@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from webapp import db
 from webapp.models import Version
+from webapp.archive import archives
 
 log = logging.getLogger("photonledger.thumbs")
 Image.MAX_IMAGE_PIXELS = 400_000_000
@@ -68,14 +69,13 @@ def thumb_name(rel_path: str, kind: str) -> str:
 
 
 def render(cfg: dict, limit: int | None = None) -> int:
-    archive = Path(cfg["ARCHIVE_PATH"])
     data = Path(cfg["DATA_PATH"])
     todo = db.session.scalars(
         select(Version).where(Version.thumb.is_(None), Version.error.is_(None))).all()
     done = 0
     for v in todo[:limit] if limit else todo:
         try:
-            img, size = load_image(archive / v.path, cfg["PREVIEW_SIZE"])
+            img, size = load_image(archives.resolve(cfg, v.path), cfg["PREVIEW_SIZE"])
             v.width, v.height = size
             for kind, side in (("previews", cfg["PREVIEW_SIZE"]), ("thumbs", cfg["THUMB_SIZE"])):
                 name = thumb_name(v.path, kind)

@@ -1,6 +1,7 @@
 {
   "SECRET_KEY": "change-me",
   "ARCHIVE_PATH": "/path/to/Astro",
+  "ARCHIVES": null,
   "DATA_PATH": "./data",
   "SCAN_INTERVAL": 900,
   "FOCAL_TOLERANCE": 0.03,

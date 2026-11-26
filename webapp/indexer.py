@@ -21,7 +21,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from webapp import create_app, db
-from webapp.archive import checks, derive, nightlog, scanner, thumbs
+from webapp import backup
+from webapp.archive import archives, checks, derive, nightlog, scanner, thumbs
 from webapp.models import IndexRun
 
 log = logging.getLogger("photonledger")
@@ -105,8 +106,14 @@ def _run(app) -> IndexRun:
     run = IndexRun(started=scanner.now(), phase="scan")
     db.session.add(run)
     db.session.commit()
+    saved = None
     try:
-        log.info("Scan von %s", cfg["ARCHIVE_PATH"])
+        saved = backup.daily(cfg)                 # before the run changes anything
+    except Exception as e:  # noqa: BLE001 - a failed backup must not stop the scan
+        log.warning("Datenbanksicherung fehlgeschlagen: %s", e)
+    try:
+        log.info("Scan von %s", ", ".join(f"{a.name} ({a.path})" if a.name else str(a.path)
+                                          for a in archives.configured(cfg)))
         scanner.scan(cfg, run)
         run.phase = "derive"
         db.session.commit()
@@ -123,6 +130,8 @@ def _run(app) -> IndexRun:
         cleaned = thumbs.cleanup(cfg)
         run.phase = "done"
         notes = [run.message] if run.message else []
+        if saved:
+            notes.append(f"Datenbank gesichert ({saved.name})")
         if n:
             notes.append(f"{n} Vorschaubilder erzeugt")
         if cleaned:
@@ -132,7 +141,7 @@ def _run(app) -> IndexRun:
         db.session.rollback()
         run = db.session.get(IndexRun, run.id)
         run.phase = "failed"
-        run.message = f"{type(e).__name__}: {e}"
+        run.message = str(e) if type(e) is RuntimeError else f"{type(e).__name__}: {e}"
         log.exception("Indexlauf fehlgeschlagen")
     run.finished = scanner.now()
     db.session.commit()

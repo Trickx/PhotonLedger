@@ -26,7 +26,7 @@
 {% macro sad_dot(st, sid) -%}
 {%- set st = st or {'status': 'none', 'reasons': ['keine Auswertung von StarAberrationDiagnostics'], 'notes': [], 'summary': none} -%}
 {%- set sm = st.summary -%}
-{%- set label = {'ok': 'SAD vorhanden, keine Auffälligkeiten', 'none': 'keine SAD-Auswertung', 'error': 'SAD mit Auffälligkeiten'}[st.status] -%}
+{%- set label = {'ok': 'SAD vorhanden, keine Auffälligkeiten', 'none': 'keine SAD-Auswertung', 'hint': 'SAD mit Hinweisen', 'error': 'SAD-Ergebnisse nicht lesbar'}[st.status] -%}
 {%- set fwhm = ('%.1f'|format(sm.fwhm_center_arcsec)|replace('.', ',') ~ '″') if sm and sm.fwhm_center_arcsec else (('%.2f'|format(sm.fwhm_center)|replace('.', ',') ~ ' px') if sm and sm.fwhm_center else '') -%}
 <a class="pl-dot pl-dot-{{ st.status }}" href="{{ url_for('main.session_page', sid=sid) }}#sad"
    title="{{ label }}{% if sm %}&#10;FWHM Mitte {{ fwhm or '–' }} · Rand/Mitte {{ '%.2f'|format(sm.ratio or 0)|replace('.', ',') }} · ε {{ '%.2f'|format(sm.ellipticity or 0)|replace('.', ',') }}{% endif %}{% for r in st.reasons + (st.notes or []) %}&#10;• {{ r }}{% endfor %}"

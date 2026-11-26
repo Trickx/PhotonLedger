@@ -24,6 +24,7 @@ from sqlalchemy import delete, select
 
 from webapp import db
 from webapp.models import IndexRun, PhdLog, PhdSection
+from webapp.archive import archives
 
 log = logging.getLogger("photonledger.phd2")
 
@@ -32,7 +33,7 @@ LOG_NAME = re.compile(r"^PHD2_GuideLog_.*\.txt$", re.I)
 _TS = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"
 
 
-def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, base=None) -> list[str]:
+def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, rel=None) -> list[str]:
     """PHD2 logs in log/logs/Logs sub folders of dirpath (absolute paths)."""
     out = []
     for d in dirs:
@@ -41,8 +42,8 @@ def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, bas
             try:
                 out += [os.path.join(full, f) for f in os.listdir(full) if LOG_NAME.match(f)]
             except OSError:
-                if failed is not None and base is not None:
-                    failed.add(os.path.relpath(full, base).replace(os.sep, "/"))
+                if failed is not None and rel is not None:
+                    failed.add(rel(full))
     return out
 
 
@@ -158,11 +159,10 @@ def _stats(sec: dict) -> None:
 
 
 def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = None) -> None:
-    archive = Path(cfg["ARCHIVE_PATH"])
     tz = ZoneInfo(cfg.get("TIMEZONE") or os.environ.get("TZ") or "Europe/Berlin")
     existing = {p.path: p for p in db.session.scalars(select(PhdLog))}
     for full in paths:
-        rel = os.path.relpath(full, archive).replace(os.sep, "/")
+        rel = archives.to_rel(cfg, full)
         try:
             st = os.stat(full)
         except OSError:

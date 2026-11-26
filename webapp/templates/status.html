@@ -3,7 +3,8 @@
 {% block content %}
 <div class="pl-page">
     <h1>Indexer</h1>
-    <p class="pl-lead">Archiv (nur lesend): <code>{{ archive }}</code></p>
+    <p class="pl-lead">{% if st.archives|length > 1 %}Archive{% else %}Archiv{% endif %} (nur lesend):
+        {% for a in st.archives %}{% if a.name %}{{ a.name }} {% endif %}<code>{{ a.path }}</code>{% if not loop.last %} · {% endif %}{% endfor %}</p>
 
     <div id="indexer-state" hx-get="{{ url_for('main.status_state') }}" hx-trigger="every 5s" hx-swap="innerHTML">
         {% include "_indexer_state.html" %}

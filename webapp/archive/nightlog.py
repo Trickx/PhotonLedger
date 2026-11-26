@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select
 
 from webapp import db
 from webapp.models import Frame, IndexRun, NightAnalysis, NightLog
+from webapp.archive import archives
 
 log = logging.getLogger("photonledger.nightlog")
 
@@ -102,7 +103,7 @@ def kind_of(name: str) -> str | None:
     return "nina"
 
 
-def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, base=None) -> list[str]:
+def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, rel=None) -> list[str]:
     out = []
     for d in dirs:
         if d.lower() in LOG_DIRS:
@@ -110,8 +111,8 @@ def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, bas
             try:
                 out += [os.path.join(full, f) for f in os.listdir(full) if kind_of(f)]
             except OSError:
-                if failed is not None and base is not None:
-                    failed.add(os.path.relpath(full, base).replace(os.sep, "/"))
+                if failed is not None and rel is not None:
+                    failed.add(rel(full))
     return out
 
 
@@ -131,11 +132,10 @@ def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = 
     if _airgus() is None:
         log.warning("Airgus ist nicht installiert – ASIAIR/NINA-Logs werden nicht ausgewertet")
         return
-    archive = Path(cfg["ARCHIVE_PATH"])
     tz = ZoneInfo(cfg.get("TIMEZONE") or "Europe/Berlin")
     existing = {n.path: n for n in db.session.scalars(select(NightLog))}
     for full in paths:
-        rel = os.path.relpath(full, archive).replace(os.sep, "/")
+        rel = archives.to_rel(cfg, full)
         try:
             st = os.stat(full)
         except OSError:
@@ -199,7 +199,6 @@ def analyse(cfg: dict) -> int:
     from airgus.rules import default_rules
     from airgus.timeline import Timeline
 
-    archive = Path(cfg["ARCHIVE_PATH"])
     tz = ZoneInfo(cfg.get("TIMEZONE") or "Europe/Berlin")
     windows = _windows()
     logs = db.session.scalars(select(NightLog)).all()
@@ -221,7 +220,7 @@ def analyse(cfg: dict) -> int:
         for n in mine:
             if n.path not in cache:
                 try:
-                    cache[n.path] = _read(archive / n.path)
+                    cache[n.path] = _read(archives.resolve(cfg, n.path))
                 except Exception:  # noqa: BLE001
                     cache[n.path] = []
             # only the events of this session's time span (in UTC)

@@ -21,13 +21,13 @@ sondern auf der Seite *Prüfungen* gemeldet (Regelname in Klammern).
     │   ├── DarkFlats/                     optional
     │   ├── Logs/                          ASIAIR-Autorun-, PHD2-, NINA-Logs (optional)
     │   ├── Processing/                    Stacks/Zwischenschritte/Finals nur dieser Nacht (optional)
-    │   └── Finals/                        Ergebnisse nur dieser Nacht, auch FITS/XISF (optional)
+    │   └── Finals/                        Ergebnisse nur dieser Nacht, jedes Format (optional)
     ├── <Session 2>/                       2026-04-29
     │   └── …
     ├── Processing/                        Bearbeitung über alle Sessions des Ziels
     │   ├── master/                        WBPP-Ausgabe, Zwischenschritte und *final*-Dateien
     │   └── *.xisf | *.fit | *.tif …       PixInsight-/Siril-Schritte, Zwischenstände
-    └── Finals/                            fertige Bilder (JPG, PNG, TIFF)
+    └── Finals/                            fertige Ergebnisse, jedes Format (JPG, TIFF, XISF …)
 ```
 
 ## Ebenen
@@ -200,18 +200,16 @@ Processing/
 
 ### 7. `Finals` – fertige Bilder
 
-Fertige Bilder als JPG, PNG oder TIFF in `Finals/` im Ziel- oder
-Session-Ordner. Sie erscheinen als **Versionen** des Ziels; das neueste Bild in
+Fertige Ergebnisse in `Finals/` im Ziel- oder Session-Ordner. Bilder
+(JPG, PNG, TIFF) erscheinen als **Versionen** des Ziels; das neueste Bild in
 `Finals` ist das Titelbild, solange keins gewählt wurde.
 
 - Bilder (JPG/PNG/TIFF) werden auch in `Processing/`, `PI/`, `DXO/`,
   `Selected/` oder direkt im Zielordner als Versionen erkannt.
-- Ein Ordner **genau** `Finals` direkt in einem **Session**-Ordner
-  (`<Ziel>/<Session>/Finals/`) darf alles enthalten, auch FITS/XISF – die
-  Ergebnisse dieser einen Nacht.
-- Im `Finals` des **Ziel**ordners nur Bilder (JPG/PNG/TIFF); FITS/XISF dort
-  sind Zwischenergebnisse außerhalb von `Processing` (Warnung). Fertige
-  XISF-Finals des Ziels gehören nach `Processing/master/`.
+- Ein Ordner **genau** `Finals` – im Ziel- oder im Session-Ordner – darf
+  jedes Format enthalten, auch FITS/XISF (z. B. `IC1396_Final.xisf` neben dem
+  JPG). FITS/XISF dort zählen nicht als Versionen, werden aber auch nicht
+  gemeldet.
 - Ordner mit mehr als 30 Bildern (Burst-Serien, registrierte Einzelbilder)
   gelten nicht als Versionen (`MAX_VERSIONS_PER_DIR`).
 - Einzelbilder als TIFF (Name beginnt mit `Light_`, `Flat_`, `Dark_`, `Bias_`)

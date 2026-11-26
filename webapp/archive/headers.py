@@ -202,16 +202,43 @@ def read_raw_cards(path: Path) -> dict:
 
 # --------------------------------------------------------------------------- entry
 
+CONTENT_CARD = "PL_CONTENT"     # raw card set when the content does not match the file extension
+
+
+def sniff(path: Path) -> str | None:
+    """File format from the first bytes: "FITS", "XISF", "RAF" (Fuji RAW) or None (other/unknown)."""
+    with open(path, "rb") as fh:
+        head = fh.read(16)
+    if head.startswith(b"SIMPLE  ="):
+        return "FITS"
+    if head.startswith(b"XISF0100"):
+        return "XISF"
+    if head.startswith(b"FUJIFILMCCD-RAW"):
+        return "RAF"
+    return None
+
+
+def _format_of_ext(ext: str) -> str:
+    return "FITS" if ext in FITS_EXT else "XISF" if ext in XISF_EXT else "RAF" if ext == ".raf" else "RAW"
+
+
 def read_header(path: Path) -> tuple[dict, dict]:
-    """Return (normalized fields, raw cards)."""
+    """Return (normalized fields, raw cards). The format is taken from the content, so that a FITS file
+    with a wrong extension (e.g. renamed to .raf) is still read; the raw cards then name the content."""
     ext = path.suffix.lower()
-    if ext in FITS_EXT:
-        cards = read_fits_cards(path)
-    elif ext in XISF_EXT:
-        cards = read_xisf_cards(path)
-    elif ext in RAW_EXT:
-        cards = read_raw_cards(path)
-    else:
+    if ext not in FITS_EXT and ext not in XISF_EXT and ext not in RAW_EXT:
         raise ValueError(f"unsupported file type {ext}")
+    expected, content = _format_of_ext(ext), sniff(path)
+    fmt = content or expected
+    if content is None and expected in ("FITS", "XISF", "RAF"):
+        raise ValueError(f"Inhalt ist keine {expected}-Datei (Dateiendung {ext})")
+    if fmt == "FITS":
+        cards = read_fits_cards(path)
+    elif fmt == "XISF":
+        cards = read_xisf_cards(path)
+    else:
+        cards = read_raw_cards(path)
+    if content and content != expected:
+        cards[CONTENT_CARD] = content
     cards = {k: v for k, v in cards.items() if k not in ("COMMENT", "HISTORY", "")}
     return normalize(cards), {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in cards.items()}

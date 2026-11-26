@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from webapp import db
 from webapp.archive.rules import catalog_sort_key
-from webapp.models import Frame, IndexRun, Intermediate, Issue, Session, Target, Version
+from webapp.models import Frame, IndexRun, Intermediate, Issue, IssueAck, Session, Target, Version
 
 main = Blueprint("main", __name__)
 
@@ -37,10 +37,10 @@ CHECK_GROUPS = [
     ("kalibrierung", "Kalibrierung", "bi-sliders",
      {"darks_bias_present", "no_flats", "dark_exposure", "dark_no_header", "dark_temperature", "flat_camera",
       "flat_focal", "flat_filter"}),
-    ("dateien", "Dateien & Header", "bi-file-earmark-x", {"unreadable", "missing_header"}),
+    ("dateien", "Dateien & Header", "bi-file-earmark-x", {"unreadable", "missing_header", "wrong_extension"}),
     ("optik", "Optik (SAD)", "bi-bullseye",
      {"sad_tilt", "sad_edge", "sad_tracking", "sad_outliers", "sad_frame_errors", "sad_missing", "sad_unreadable"}),
-    ("ziele", "Ziele", "bi-flag", {"pointing", "no_version", "no_catalog_id", "many_rejected"}),
+    ("ziele", "Ziele", "bi-flag", {"pointing", "foreign_lights", "no_version", "no_catalog_id", "many_rejected"}),
 ]
 SEVERITY = {"error": ("Fehler", "bi-x-octagon-fill", "danger"),
             "warning": ("Warnung", "bi-exclamation-triangle-fill", "warning"),
@@ -70,12 +70,26 @@ def sad_overview() -> dict[str, dict]:
 def _globals():
     def issue_badge():
         try:
-            return db.session.scalar(select(func.count()).select_from(Issue)
-                                     .where(Issue.severity.in_(("error", "warning"))))
+            open_, _ = split_acknowledged(db.session.scalars(
+                select(Issue).where(Issue.severity.in_(("error", "warning")))).all())
+            return len(open_)
         except Exception:  # noqa: BLE001 - e.g. table not migrated yet
             return 0
+    def indexer_problem():
+        """The latest finished index run, if it failed - shown on every page."""
+        try:
+            last = db.session.scalars(select(IndexRun).where(IndexRun.finished.is_not(None))
+                                      .order_by(IndexRun.id.desc()).limit(1)).first()
+            if not last or last.phase != "failed":
+                return None
+            ok = db.session.scalars(select(IndexRun).where(IndexRun.phase == "done")
+                                    .order_by(IndexRun.id.desc()).limit(1)).first()
+            return dict(message=last.message, when=last.finished, last_ok=ok.finished if ok else None)
+        except Exception:  # noqa: BLE001 - e.g. table not migrated yet
+            return None
     return {"type_icon": lambda t: TYPE_ICONS.get(t, "bi-star"), "is_htmx": bool(request.headers.get("HX-Request")),
-            "issue_badge": issue_badge, "SEVERITY": SEVERITY}
+            "issue_badge": issue_badge, "indexer_problem": indexer_problem, "data_version": data_version,
+            "SEVERITY": SEVERITY}
 
 
 # --------------------------------------------------------------------------- helpers
@@ -248,12 +262,45 @@ def media(kind: str, vid: int):
     return send_file(path, mimetype="image/jpeg", max_age=86400)
 
 
+def split_acknowledged(issues) -> tuple[list, list]:
+    """(open, acknowledged): an acknowledgement holds while the message stays the same - a new count
+    or another file in the message brings the issue back."""
+    acks = {a.key: a.message for a in db.session.scalars(select(IssueAck))}
+    open_, done = [], []
+    for i in issues:
+        (done if acks.get(i.key) == i.message else open_).append(i)
+    return open_, done
+
+
+@main.post("/checks/<int:iid>/ack")
+def check_ack(iid: int):
+    from datetime import datetime
+    i = db.session.get(Issue, iid) or abort(404)
+    a = db.session.scalar(select(IssueAck).where(IssueAck.key == i.key)) or IssueAck(key=i.key)
+    a.message, a.created = i.message, datetime.now()
+    db.session.add(a)
+    db.session.commit()
+    return redirect(request.form.get("next") or url_for("main.checks"))
+
+
+@main.post("/checks/<int:iid>/unack")
+def check_unack(iid: int):
+    i = db.session.get(Issue, iid) or abort(404)
+    a = db.session.scalar(select(IssueAck).where(IssueAck.key == i.key))
+    if a:
+        db.session.delete(a)
+        db.session.commit()
+    return redirect(request.form.get("next") or url_for("main.checks"))
+
+
 @main.route("/checks")
 def checks():
-    issues = db.session.scalars(select(Issue)).all()
     order = {"error": 0, "warning": 1, "hint": 2}
     group = request.args.get("g")
     sev = request.args.get("s")
+    show_ack = request.args.get("ack") == "1"
+    open_, acked = split_acknowledged(db.session.scalars(select(Issue)).all())
+    issues = acked if show_ack else open_
     counts = {g[0]: {"error": 0, "warning": 0, "hint": 0} for g in CHECK_GROUPS}
     for i in issues:
         counts[_check_group(i.code)][i.severity] += 1
@@ -263,7 +310,7 @@ def checks():
                               i.target.name if i.target else "", i.session_root or ""))
     totals = {k: sum(c[k] for c in counts.values()) for k in order}
     return render_template("checks.html", issues=shown, groups=CHECK_GROUPS, counts=counts, totals=totals,
-                           group=group, sev=sev, group_of=_check_group)
+                           group=group, sev=sev, group_of=_check_group, show_ack=show_ack, n_acked=len(acked))
 
 
 FILE_KINDS = {
@@ -283,7 +330,7 @@ def _session_roots() -> set[str]:
 
 
 def _misplaced_intermediates() -> int:
-    """Intermediates outside 'Processing' and outside '<session>/Finals'."""
+    """Intermediates outside 'Processing' and 'Finals'."""
     from webapp.archive.rules import allowed_location
     roots = _session_roots()
     paths = db.session.scalars(select(Intermediate.path).where(Intermediate.path.op("NOT GLOB")("*/Processing/*")))
@@ -502,10 +549,36 @@ def _indexer_state() -> dict:
     if hb and hb.get("next_run"):
         from datetime import datetime
         next_run = datetime.fromisoformat(hb["next_run"])
+    from webapp import backup
     from webapp.archive import nightlog
+    from webapp.archive import archives
+    arcs = archives.state(cfg)
+    worst = next((s for s in ("missing", "empty") if any(a["state"] == s for a in arcs)), "ok")
     return dict(interval=int(cfg["SCAN_INTERVAL"]), service=hb is not None, running=running, requested=requested,
+                archives=arcs, archive=", ".join(a["path"] for a in arcs), archive_ok=worst,
                 last=last, next_run=next_run, phase=last.phase if last and running else None,
-                airgus=nightlog.info())
+                airgus=nightlog.info(), backups=backup.listing(cfg), backup_keep=int(cfg.get("BACKUP_KEEP", 14)))
+
+
+def data_version() -> dict:
+    """Small fingerprint of the indexed data and the latest run - polled by every page."""
+    from webapp import indexer
+    last = db.session.scalars(select(IndexRun).where(IndexRun.finished.is_not(None))
+                              .order_by(IndexRun.id.desc()).limit(1)).first()
+    parts = []
+    for model in (Frame, Version, Intermediate, Session, Issue):
+        cnt = db.session.scalar(select(func.count()).select_from(model))
+        parts.append(str(cnt))
+    for model in (Frame, Version):
+        parts.append("%.0f" % (db.session.scalar(select(func.coalesce(func.sum(model.mtime), 0))) or 0))
+    parts.append(str(db.session.scalar(select(func.count()).select_from(Issue).where(Issue.severity != "hint"))))
+    return dict(run=last.id if last else 0, phase=last.phase if last else None,
+                running=indexer.is_running(current_app.config), data="-".join(parts))
+
+
+@main.route("/status/version")
+def status_version():
+    return data_version()
 
 
 @main.route("/status/state")
@@ -547,4 +620,4 @@ def status():
     inter_bad = _misplaced_intermediates() + ignored
     return render_template("status.html", runs=runs, frame_errors=frame_errors, version_errors=version_errors,
                            counts=counts, ignored=ignored, inter_total=inter_total, inter_bad=inter_bad,
-                           pending=pending, archive=current_app.config["ARCHIVE_PATH"], st=_indexer_state())
+                           pending=pending, st=_indexer_state())

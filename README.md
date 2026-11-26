@@ -48,6 +48,16 @@ Dateien wieder (gleicher Name, gleiche Größe und Änderungszeit, alter Pfad ve
 übernimmt ihre Daten, statt sie neu einzulesen. Titelbild und abweichend gewählte Rigs je
 Session wandern mit.
 
+**Prüfungen quittieren.** Gewollte Meldungen (z. B. Darks im Session-Ordner) lassen sich auf der
+Seite *Prüfungen* mit **quittieren** ausblenden; sie zählen dann auch nicht mehr im Zähler der
+Navigation. Ändert sich ihr Text – etwa weil neue Dateien dazukommen –, erscheinen sie wieder.
+Die quittierten stehen unter **N quittiert** und lassen sich dort zurückholen.
+
+**Plausibilität.** Nennt der Header eines Lights ein anderes Objekt (`OBJECT`, z. B. „M 31“ im
+Ordner der Perseiden) oder zeigt er per `RA`/`DEC` deutlich neben das Ziel des Ordners, meldet
+*Prüfungen › Ziele* das Light als „passt laut Header nicht“ – typisch für falsch einsortierte oder
+beim Kopieren überschriebene Dateien. Bei Ordnern ohne Katalognummer ist es nur ein Hinweis.
+
 ## Katalog und Bildfeld
 
 Ziele mit Katalognummer im Ordnernamen werden offline mit **OpenNGC** angereichert
@@ -161,6 +171,22 @@ gebaut. Veröffentlicht wird es in der GitHub Container Registry:
 | Tag `v1.2.3` | `ghcr.io/trickx/photonledger:1.2.3` und `:1.2` |
 | andere Branches | nur Tests und Build, nichts wird veröffentlicht |
 
+### Versionen
+
+Die Versionsnummer steht in der Datei [`VERSION`](VERSION) (Schema `MAJOR.MINOR.PATCH`), Änderungen
+in [`CHANGELOG.md`](CHANGELOG.md). Die Seite *Indexer* zeigt die laufende Version: `1.2.3` für ein
+Release, `1.2.3-dev.<commit>` für einen Stand von `main`, `1.2.3-local` ohne Docker.
+
+Release: `VERSION` und `CHANGELOG.md` anpassen, committen, dann
+
+```bash
+git tag v1.2.3 && git push origin v1.2.3
+```
+
+Der Build bricht ab, wenn Tag und `VERSION` nicht übereinstimmen. Auf dem NAS hält
+`PHOTONLEDGER_TAG=1.2.3` (oder `1.2` für Bugfix-Updates) eine Version fest; zurück geht es,
+indem man dort die alte Nummer einträgt und `pull` / `up -d` ausführt.
+
 Auf dem NAS reichen [`docker-compose.prod.yml`](docker-compose.prod.yml) und `.env`
 (kein Quellcode nötig). Diese Compose-Datei holt nur das fertige Image, sie baut nie:
 
@@ -200,6 +226,41 @@ Danach: `http://<host>:5080`
 - Zwei Dienste aus demselben Image: `web` (Port 5080) und `indexer`
   (scannt alle `FLASK_SCAN_INTERVAL` Sekunden, nur geänderte Dateien werden neu gelesen).
 - `PUID`/`PGID` müssen `./data` beschreiben und das Archiv lesen dürfen.
+- **Sicherung:** Der erste Indexlauf eines Tages kopiert die Datenbank vorher nach
+  `data/backups/photonledger-JJJJ-MM-TT.db` (SQLite-Online-Backup, auch bei laufender
+  Web-App konsistent); die neuesten `BACKUP_KEEP` Kopien (Standard 14) bleiben. Darin stecken
+  die Einstellungen, die sich nicht aus dem Archiv neu einlesen lassen: Rigs, Titelbilder,
+  quittierte Prüfungen. Zurückspielen: Container stoppen, Kopie als `data/photonledger.db`
+  ablegen (vorher `photonledger.db-wal` und `-shm` löschen), Container starten.
+
+### Mehrere Archive
+
+Liegt die Sammlung auf mehreren Freigaben oder Platten, bekommt jedes Archiv einen
+eigenen, schreibgeschützten Mount und einen Namen:
+
+```yaml
+    volumes:
+      - ./data:/data
+      - /share/Multimedia/Astro:/archives/Astro:ro
+      - /share/Backup/Dwarf:/archives/Dwarf:ro
+```
+
+```bash
+# .env
+FLASK_ARCHIVES={"Astro": "/archives/Astro", "Dwarf": "/archives/Dwarf"}
+```
+
+- Jedes Archiv hat die übliche Struktur `<Archiv>/<Ziel>/<Session>/…`.
+- Gespeicherte Pfade beginnen mit dem Namen (`Astro/M42 (Orion Nebula)/2025-02-19/…`).
+- Ziele mit derselben Katalognummer werden archivübergreifend zusammengeführt; Rigs,
+  Statistik und Prüfungen gelten für alles.
+- Fehlt ein Mount oder ist er leer, meldet die Seite *Indexer* das Archiv als
+  „nicht gefunden“ bzw. „leer“; seine Einträge bleiben stehen, die übrigen Archive
+  werden normal gescannt.
+- Umstellen von einem Archiv (`ARCHIVE_PATH`) auf benannte Archive: Der nächste Lauf
+  erkennt die Dateien unter den neuen Pfaden wieder und übernimmt sie, ohne sie neu
+  zu lesen – Sessions, Titelbilder und gewählte Rigs bleiben erhalten. Die
+  `ARCHIVE_PATH`-Zeile im `volumes`-Abschnitt kann dann entfallen.
 
 ## Entwicklung
 
@@ -221,12 +282,14 @@ cp config.json-dist config.json            # ARCHIVE_PATH setzen
 | Name | Standard | Bedeutung |
 |---|---|---|
 | `ARCHIVE_PATH` | `./archive` (Docker: `/archive`) | Wurzel des Bildarchivs |
+| `ARCHIVES` | – | mehrere Archive: `{"<Name>": "<Pfad>", …}`; ersetzt `ARCHIVE_PATH` (siehe *Mehrere Archive*) |
 | `DATA_PATH` | `./data` (Docker: `/data`) | Datenbank und Vorschaubilder |
 | `SCAN_INTERVAL` | `900` | Sekunden zwischen zwei Scans |
 | `FOCAL_TOLERANCE` | `0.03` | relative Toleranz für gleiche Brennweite |
 | `NIGHT_OFFSET_HOURS` | `12` | `DATE-OBS` minus 12 h = Datum der Beobachtungsnacht |
 | `MAX_VERSIONS_PER_DIR` | `30` | Ordner mit mehr Bildern sind keine Versionen |
 | `IGNORE_DIRS` | `[]` | zusätzlich zu ignorierende Ordnernamen (Glob) |
+| `BACKUP_KEEP` | `14` | Tageskopien der Datenbank in `data/backups` (`0` = keine) |
 
 ## Lizenz
 

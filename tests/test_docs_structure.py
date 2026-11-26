@@ -19,7 +19,7 @@ S = f"{T}/2026-04-28"
     (f"{T}/Processing/01_GraXpert.xisf", ("intermediate",)),
     (f"{S}/Processing/stack.fit", ("intermediate",)),
     (f"{T}/Finals/M97_M108_final.jpg", ("version",)),
-    (f"{T}/Finals/stack.xisf", ("intermediate",)),                 # FITS/XISF in Finals: intermediate
+    (f"{T}/Finals/stack.xisf", ("intermediate",)),                 # FITS/XISF in Finals: intermediate (allowed)
     (f"{S}/Lights/SAD/x_Size.png", None),                          # read by the SAD importer, not as file
     (f"{S}/Logs/PHD2_GuideLog_2026-04-28_222144.txt", None),       # read by the log importers
     ("Mineral Moon/2026-05-25/Lights/m.fit", ("frame", "Mineral Moon/2026-05-25", "light", False)),
@@ -49,9 +49,9 @@ def test_documented_processing_rules(name, findings):
 
 
 @pytest.mark.parametrize("path, findings", [
-    (f"{S}/Finals/M97_final.xisf", ["session_finals"]),           # Finals directly in a session folder
-    (f"{S}/Finals/v2/M97.xisf", ["session_finals"]),
-    (f"{T}/Finals/stack.xisf", ["not_in_processing"]),            # Finals of the target: images only
+    (f"{S}/Finals/M97_final.xisf", ["finals"]),                   # Finals of a session: any format
+    (f"{S}/Finals/v2/M97.xisf", ["finals"]),
+    (f"{T}/Finals/IC1396_Final.xisf", ["finals"]),               # Finals of the target: any format too
     (f"{S}/finals/M97.xisf", ["not_in_processing"]),              # exactly "Finals"
 ])
 def test_documented_session_finals(path, findings):

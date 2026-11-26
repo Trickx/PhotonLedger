@@ -23,6 +23,7 @@ from webapp import db
 from webapp.models import Frame, IndexRun, SadFrame, SadSeries
 
 from . import rules
+from webapp.archive import archives
 
 log = logging.getLogger("photonledger.sad")
 
@@ -72,10 +73,9 @@ def _mtime(p: Path) -> float | None:
 
 def sync(cfg: dict, run: IndexRun, sad_dirs: list[str], protect: set[str] | None = None) -> None:
     """Update SadSeries/SadFrame for the given SAD folders (relative paths); remove vanished ones."""
-    archive = Path(cfg["ARCHIVE_PATH"])
     existing = {s.folder: s for s in db.session.scalars(select(SadSeries))}
     for rel in sad_dirs:
-        d = archive / rel
+        d = archives.resolve(cfg, rel)
         s = existing.get(rel) or SadSeries(folder=rel)
         s.seen_run = run.id
         lights_dir = rel.rsplit("/", 1)[0]

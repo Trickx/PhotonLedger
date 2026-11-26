@@ -9,12 +9,13 @@
         <span><i class="pl-dot pl-dot-ok"></i>Log vorhanden, keine Fehler</span>
         <span><i class="pl-dot pl-dot-none"></i>kein Log</span>
         <span><i class="pl-dot pl-dot-error"></i>Log mit Fehlern</span>
+        <span><i class="pl-dot pl-dot-hint"></i>SAD mit Hinweisen</span>
         <span>· Details beim Überfahren, Klick öffnet den Bereich auf der Session-Seite</span></p>
     <div class="table-responsive">
     <table class="table table-sm pl-table align-middle">
         <thead><tr>
             <th>Datum</th><th>Ziel</th><th>Rig</th><th>Filter</th>
-            <th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="text-center">F / D / B</th><th class="text-center" title="ASIAIR- oder NINA-Log (mit Airgus ausgewertet): grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">Log</th><th class="text-center" title="PHD2-Guiding-Log: grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">PHD2</th><th class="text-center" title="WBPP-Log (PixInsight): grün mit WBPP gestackt ohne Fehler, orange nicht gestackt bzw. kein Log, rot Lauf fehlgeschlagen oder mit Fehlern">WBPP</th><th class="text-center" title="StarAberrationDiagnostics: grün ausgewertet ohne Auffälligkeiten, orange keine Auswertung, rot Verkippung, Randunschärfe oder Nachführfehler">SAD</th>
+            <th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="text-center">F / D / B</th><th class="text-center" title="ASIAIR- oder NINA-Log (mit Airgus ausgewertet): grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">Log</th><th class="text-center" title="PHD2-Guiding-Log: grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">PHD2</th><th class="text-center" title="WBPP-Log (PixInsight): grün mit WBPP gestackt ohne Fehler, orange nicht gestackt bzw. kein Log, rot Lauf fehlgeschlagen oder mit Fehlern">WBPP</th><th class="text-center" title="StarAberrationDiagnostics: grün ausgewertet ohne Auffälligkeiten, orange keine Auswertung, blau Hinweis auf Verkippung, Randunschärfe oder Nachführfehler, rot Ergebnisse nicht lesbar">SAD</th>
         </tr></thead>
         <tbody>
         {% for s in sessions %}

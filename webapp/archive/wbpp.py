@@ -24,6 +24,7 @@ from sqlalchemy import delete, select
 
 from webapp import db
 from webapp.models import IndexRun, WbppRun
+from webapp.archive import archives
 
 log = logging.getLogger("photonledger.wbpp")
 
@@ -75,7 +76,7 @@ def _is_light_calibration(src: str, dst: str) -> bool:
     return not _CAL_NAME.match(src.replace("\\", "/").rsplit("/", 1)[-1])
 
 
-def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, base=None) -> list[str]:
+def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, rel=None) -> list[str]:
     out = []
     for d in dirs:
         if d.lower() in LOG_DIRS:
@@ -83,8 +84,8 @@ def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, bas
             try:
                 out += [os.path.join(full, f) for f in os.listdir(full) if LOG_NAME.match(f)]
             except OSError:
-                if failed is not None and base is not None:
-                    failed.add(os.path.relpath(full, base).replace(os.sep, "/"))
+                if failed is not None and rel is not None:
+                    failed.add(rel(full))
     return out
 
 
@@ -209,12 +210,10 @@ def parse(lines) -> dict:
 
 
 def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = None) -> None:
-    from .rules import classify
-    archive = Path(cfg["ARCHIVE_PATH"])
     tz = ZoneInfo(cfg.get("TIMEZONE") or "Europe/Berlin")
     existing = {w.path: w for w in db.session.scalars(select(WbppRun))}
     for full in paths:
-        rel = os.path.relpath(full, archive).replace(os.sep, "/")
+        rel = archives.to_rel(cfg, full)
         try:
             st = os.stat(full)
         except OSError:
@@ -225,7 +224,7 @@ def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = 
             continue
         w = w or WbppRun(path=rel)
         w.size, w.mtime, w.seen_run, w.error = st.st_size, st.st_mtime, run.id, None
-        c = classify(rel.rsplit("/", 2)[0] + "/x.fit")            # the folder that holds logs/ -> target folder
+        c = archives.classify_stored(cfg, rel.rsplit("/", 2)[0] + "/x.fit")            # the folder that holds logs/ -> target folder
         w.target_folder = c.target_folder if c else rel.split("/")[0]
         try:
             with open(full, encoding="utf-8", errors="replace") as fh:

@@ -11,10 +11,12 @@
     <script defer src="{{ url_for('static', filename='htmx-2.0.3.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 </head>
-<body>
+{% set dv = data_version() if not is_htmx else none %}
+<body data-version-url="{{ url_for('main.status_version') }}"{% if dv %} data-run="{{ dv.run }}" data-data="{{ dv.data }}"{% endif %}
+      data-page="{{ request.endpoint }}">
 <div class="pl-app">
     <nav class="pl-nav">
-        <a class="pl-brand" href="{{ url_for('main.index') }}" title="Photon Ledger">
+        <a class="pl-brand" href="{{ url_for('main.index') }}" title="Photon Ledger {{ config.APPVERSION }}">
             <i class="bi bi-journal-richtext"></i><span>Photon Ledger</span>
         </a>
         {% set ep = request.endpoint or '' %}
@@ -32,7 +34,8 @@
             <i class="bi bi-clipboard-check"></i><span>Prüfungen</span>
             {% set nb = issue_badge() %}{% if nb %}<span class="pl-nav-badge" title="{{ nb }} Fehler und Warnungen">{{ nb }}</span>{% endif %}</a>
         <a class="pl-nav-link {% if ep == 'main.status' %}active{% endif %}" href="{{ url_for('main.status') }}">
-            <i class="bi bi-activity"></i><span>Indexer</span></a>
+            <i class="bi bi-activity"></i><span>Indexer</span>
+            {% set ip = indexer_problem() %}{% if ip %}<span class="pl-nav-badge" title="Letzter Indexlauf fehlgeschlagen">!</span>{% endif %}</a>
 
         <div class="pl-nav-bottom dropdown">
             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="bd-theme"
@@ -52,6 +55,14 @@
     </nav>
 
     <main class="pl-main">
+        {% if ip %}
+        <div class="alert alert-danger py-2 small d-flex flex-wrap align-items-center gap-2 pl-indexer-alert" role="alert">
+            <i class="bi bi-exclamation-octagon"></i>
+            <span><b>Letzter Indexlauf fehlgeschlagen</b> ({{ ip.when|de_date('%d.%m.%Y %H:%M') }}): {{ (ip.message or 'unbekannter Fehler').rstrip('.') }}.
+                {% if ip.last_ok %}Angezeigt wird der Stand vom {{ ip.last_ok|de_date('%d.%m.%Y %H:%M') }}.{% else %}Es gibt noch keinen erfolgreichen Lauf.{% endif %}</span>
+            {% if request.endpoint != 'main.status' %}<a class="ms-auto alert-link" href="{{ url_for('main.status') }}">Zum Indexer</a>{% endif %}
+        </div>
+        {% endif %}
         {% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}
         <div class="pl-flash">{% for cat, m in msgs %}
             <div class="alert alert-{{ cat }} alert-dismissible fade show py-2 small" role="alert">{{ m }}
@@ -66,5 +77,36 @@
     <symbol id="moon-stars-fill" viewBox="0 0 16 16"><path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/></symbol>
     <symbol id="sun-fill" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8z"/></symbol>
 </svg>
+<div class="pl-update-toast" id="pl-update" hidden role="status">
+    <span id="pl-update-text">Neue Daten aus dem Indexlauf.</span>
+    <button type="button" class="btn btn-sm btn-primary" onclick="location.reload()">Aktualisieren</button>
+    <button type="button" class="btn-close btn-sm" aria-label="Ausblenden" onclick="this.parentElement.hidden = true"></button>
+</div>
+<script>
+// Live update: asks the server every few seconds whether a run finished or the data changed.
+// The indexer page reloads itself; other pages offer a reload so that open sections stay as they are.
+(() => {
+    const body = document.body, url = body.dataset.versionUrl;
+    let run = body.dataset.run, data = body.dataset.data, wasRunning = false;
+    if (!url || run === undefined) return;
+    const toast = document.getElementById('pl-update'), text = document.getElementById('pl-update-text');
+    const tick = async () => {
+        let v;
+        try { v = await (await fetch(url, {cache: 'no-store'})).json(); } catch (e) { return schedule(30000); }
+        const finished = String(v.run) !== run;
+        if (body.dataset.page === 'main.status') {
+            if (finished || (wasRunning && !v.running)) return location.reload();
+        } else if (finished && v.phase === 'failed') {
+            text.textContent = 'Der Indexlauf ist fehlgeschlagen.'; toast.hidden = false;
+        } else if (v.data !== data) {
+            text.textContent = 'Neue Daten aus dem Indexlauf.'; toast.hidden = false;
+        }
+        run = String(v.run); data = v.data; wasRunning = v.running;
+        schedule(v.running ? 3000 : 15000);
+    };
+    const schedule = ms => setTimeout(() => document.hidden ? schedule(ms) : tick(), ms);
+    schedule(3000);
+})();
+</script>
 </body>
 </html>

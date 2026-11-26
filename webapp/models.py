@@ -410,6 +410,20 @@ class Issue(db.Model):
 
     target: Mapped[Target | None] = relationship()
 
+    @property
+    def key(self) -> str:
+        """Stable identity across index runs (issues are recomputed): rule and where it applies."""
+        where = self.session_root or (f"#{self.target_id}" if self.target_id else (self.path or "").rsplit("/", 1)[0])
+        return f"{self.code}|{where}"
+
+
+class IssueAck(db.Model):
+    """An issue the user marked as known; hidden while its message stays the same."""
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(1100), unique=True)
+    message: Mapped[str] = mapped_column(Text)
+    created: Mapped[datetime]
+
 
 class IndexRun(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)

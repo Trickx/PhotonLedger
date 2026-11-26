@@ -9,7 +9,7 @@
 # Update:   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 # (or copy this file as docker-compose.yml, then the -f option is not needed)
 #
-#   ARCHIVE_PATH      your image archive, mounted read-only
+#   ARCHIVE_PATH      your image archive, mounted read-only (several archives: see volumes below)
 #   ./data            database (SQLite), thumbnails – bind mount on the host, no docker volume
 #   PHOTONLEDGER_TAG  image version: latest (main), a release like 1.2.0, or sha-<commit>
 
@@ -21,6 +21,9 @@ x-photonledger: &photonledger
   volumes:
     - ${ARCHIVE_PATH:-/share/Multimedia/Astro}:/archive:ro
     - ./data:/data
+    # several archives: one read-only mount each below /archives and FLASK_ARCHIVES in .env, e.g.
+    #   - /share/Multimedia/Astro:/archives/Astro:ro
+    #   - /share/Backup/Dwarf:/archives/Dwarf:ro
   env_file: .env
 
 services:

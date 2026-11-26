@@ -7,7 +7,7 @@ from PIL import Image
 from webapp import create_app, db
 from webapp.config import Config
 from webapp.indexer import run_once
-from webapp.models import Frame, Session, Target, Version
+from webapp.models import Frame, Issue, Session, Target, Version
 
 
 def _fits(path, **cards):
@@ -193,16 +193,23 @@ def test_structure_checks(app):
         leo_a = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
         leo_b = "M66, M65, NGC (Leo-Triplett)"
         assert ("darks_bias_present", leo_a) in codes            # darks are reported
+        msg = db.session.query(Issue).filter_by(code="darks_bias_present", session_root=leo_a).one().message
+        assert "Darks (Canon EOS 1200D)" in msg                  # with the camera the darks belong to
         assert ("no_session_folder", leo_b) in codes             # Lights directly in the target folder
         assert ("duplicate", leo_b) in codes                     # copy of l0.fit
+        dup = db.session.query(Issue).filter_by(code="duplicate").one()
+        assert f"„{leo_b}“" in dup.message and f"„{leo_a}“" in dup.message      # both folders, complete
+        assert f"{leo_b}/Lights/copy_of_l0.fit  ⇄  {leo_a}/Lights/l0.fit" in dup.hint   # both files, complete
+        assert dup.path == f"{leo_b}/Lights/copy_of_l0.fit"
         assert ("no_flats", leo_b) in codes
+        assert {i.severity for i in db.session.query(Issue).filter_by(code="no_flats")} == {"hint"}   # only a hint
         assert ("loose_frames", "Mineral Moon/2026-05-25-100") in codes
         assert ("no_flats", "Mineral Moon/2026-05-25-100") not in codes   # no flats needed for the Moon
         assert ("dark_exposure", leo_a) not in codes             # 180 s darks for 180 s lights
         assert any(c == "unreadable" for c, _ in codes)
         places = {i.path for i in db.session.query(Issue).filter_by(code="intermediate_location")}
         assert any(p.startswith(f"{leo_b}/PI/master/") for p in places)      # PI/master instead of Processing
-        assert not any("/Finals/" in p for p in places)                      # <session>/Finals is fine
+        assert not any("/Finals/" in p for p in places)                      # Finals (any format) is fine
         assert f"{leo_b}/loose_stack.fit" in places                          # stack next to raw data
         assert not any("/Processing/" in p for p in places)                  # Processing is fine
     c = app.test_client()
@@ -343,6 +350,7 @@ def test_star_aberration_diagnostics(app):
         assert set(f0.maps) == {"Mosaic", "Size"}
         codes = {i.code for i in db.session.query(Issue)}
         assert {"sad_tilt", "sad_edge", "sad_tracking", "sad_outliers", "sad_missing"} <= codes
+        assert {i.severity for i in db.session.query(Issue).filter(Issue.code.like("sad_%"))} == {"hint"}
         sess = db.session.query(Session).filter_by(root=sr.session_root).one()
         sid, fid = sess.id, f0.id
         outlier = db.session.query(SadFrame).filter_by(name="l2.fit").one().id
@@ -355,6 +363,8 @@ def test_star_aberration_diagnostics(app):
     assert c.get(f"/sad/map/{fid}/Coma").status_code == 404
     assert c.get(f"/session/{sid}/sad-map?f={fid}&k=Size").status_code == 200
     assert '<details id="sad" class="pl-phd pl-sad">' in page               # collapsed when the page loads
+    sad_head = page.split('<details id="sad"', 1)[1].split("</summary>", 1)[0]
+    assert "pl-dot pl-dot-hint" in sad_head                         # poor results are hints, not errors
     overview = c.get("/sessions").data.decode()
     assert ">SAD</th>" in overview and f"/session/{sid}#sad" in overview     # SAD column after WBPP
     assert overview.index(">WBPP</th>") < overview.index(">SAD</th>")
@@ -381,7 +391,7 @@ def test_file_tables(app):
     pm = c.get("/files?kind=intermediate&rule=processing_master").data.decode()
     assert "_autocrop_ABE" in pm and "masterDark_BIN-1_5202x3465" in pm
     assert "Leo_Final_V1" in c.get("/files?kind=intermediate&rule=final").data.decode()
-    sf = c.get("/files?kind=intermediate&rule=session_finals").data.decode()
+    sf = c.get("/files?kind=intermediate&rule=finals").data.decode()
     assert "leo_session.xisf" in sf
     assert "leo_session.xisf" not in c.get("/files?kind=intermediate&rule=not_in_processing").data.decode()
     lights = c.get("/files?kind=light&q=Leo+copy").data.decode()
@@ -546,3 +556,282 @@ def test_reorganised_archive_is_taken_over_without_reading(app):
         assert db.session.query(RigSessionOverride).one().session_root == new_root
         hints = {(i.code, i.message) for i in db.session.query(Issue).filter_by(code="year_folder")}
         assert any("2026/M65" in m for _, m in hints)           # the year folder is reported
+
+
+def test_archive_not_mounted(app):
+    """Unmounted archive: the run fails without deleting anything, the pages keep working from the database."""
+    import shutil
+
+    from webapp.models import SadFrame
+    c = app.test_client()
+    with app.app_context():
+        fid = db.session.query(SadFrame).filter_by(name="l0.fit").one().id
+        frames = db.session.query(Frame).count()
+        sid = db.session.query(Session).filter(Session.lights > 0).first().id
+    assert c.get(f"/sad/map/{fid}/Mosaic").status_code == 200        # rendered into the cache
+    arc = app.config["ARCHIVE_PATH"]
+    shutil.move(arc, arc + ".unmounted")                             # like an SMB share that is gone
+    try:
+        with app.app_context():
+            run = run_once(app)
+            assert run.phase == "failed" and run.message.startswith("Archiv nicht gefunden")
+            assert db.session.query(Frame).count() == frames            # nothing deleted
+        for url in ("/", "/sessions", f"/session/{sid}", "/checks", "/status", "/statistics"):
+            page = c.get(url)
+            assert page.status_code == 200, url
+            assert "Letzter Indexlauf fehlgeschlagen" in page.data.decode(), url   # visible on every page
+        status = c.get("/status/state").data.decode()
+        assert "nicht gefunden – Mount bzw. ARCHIVE_PATH prüfen" in status and "Archiv nicht gefunden" in status
+        assert c.get(f"/sad/map/{fid}/Mosaic").status_code == 200    # served from the cache
+        assert c.get(f"/sad/map/{fid}/Size").status_code == 404      # never rendered, source missing
+    finally:
+        shutil.move(arc + ".unmounted", arc)
+    with app.app_context():
+        assert run_once(app).phase == "done"
+    assert "Letzter Indexlauf fehlgeschlagen" not in c.get("/").data.decode()   # gone after a good run
+    assert "erreichbar" in c.get("/status/state").data.decode()
+
+
+def test_live_update_version(app):
+    """Pages poll /status/version: the run id changes with every finished run, the data part only when
+    the indexed data changed."""
+    c = app.test_client()
+    v1 = c.get("/status/version").get_json()
+    assert v1["run"] > 0 and v1["phase"] == "done" and v1["running"] is False
+    page = c.get("/sessions").data.decode()
+    assert f'data-run="{v1["run"]}"' in page and f'data-data="{v1["data"]}"' in page
+    with app.app_context():
+        run_once(app)                                    # nothing changed in the archive
+    v2 = c.get("/status/version").get_json()
+    assert v2["run"] == v1["run"] + 1 and v2["data"] == v1["data"]
+    os.remove(os.path.join(app.config["ARCHIVE_PATH"], "Mineral Moon", "2026-05-25-100", "m.fit"))
+    with app.app_context():
+        run_once(app)
+    assert c.get("/status/version").get_json()["data"] != v1["data"]
+
+
+def test_calibration_descriptions():
+    """Messages about darks/bias name the frame type's camera and its exposure, ISO/gain and temperature."""
+    from types import SimpleNamespace as F
+
+    from webapp.archive.checks import _cal_props, _cams
+    bias = [F(camera="Canon EOS 550D", exptime=0.00025, iso=None, gain=None, temp=19.4,
+              path="x/Bias_0.25ms_Bin1_ISO800_20260806-1.fit"),
+            F(camera="Canon EOS 550D", exptime=0.00025, iso=None, gain=None, temp=22.0,
+              path="x/Bias_0.25ms_Bin1_ISO800_20260806-2.fit")]
+    assert _cams(bias) == "Canon EOS 550D"
+    assert _cal_props(bias) == " (0.25 ms, ISO 800, 19–22 °C)"          # ISO from the file name
+    dwarf = [F(camera=None, exptime=30.0, iso=None, gain=40.0, temp=None, path="d/dark.fits")]
+    assert _cal_props(dwarf) == " (30 s, Gain 40)"
+    assert _cams(dwarf, [F(camera="DWARF 3")]) == "Kamera nicht im Header, Lights: DWARF 3"
+    assert _cams(dwarf) == "Kamera unbekannt"
+
+
+def test_copied_calibration_reported_once(app):
+    """Darks copied into a second session folder: one duplicate message, no second "contains darks" hint."""
+    import shutil
+
+    from webapp.models import Issue
+    arc = app.config["ARCHIVE_PATH"]
+    leo_a = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+    leo_b = "M66, M65, NGC (Leo-Triplett)"
+    os.makedirs(os.path.join(arc, leo_b, "Darks"))
+    shutil.copy2(os.path.join(arc, leo_a, "Darks", "d.fit"), os.path.join(arc, leo_b, "Darks", "d.fit"))
+    with app.app_context():
+        run_once(app)
+        present = {i.session_root for i in db.session.query(Issue).filter_by(code="darks_bias_present")}
+        assert leo_a in present and leo_b not in present           # the copy is not reported again here
+        copies = db.session.query(Issue).filter_by(code="calibration_copies").one()
+        assert "1 Darks (Canon EOS 1200D)" in copies.message and leo_b in copies.message
+
+
+def test_partial_calibration_copies_merged(app):
+    """Two darks copied into one folder, one of them also into a third: one message for the whole set."""
+    import shutil
+    from pathlib import Path
+
+    from webapp.models import Issue
+    arc = Path(app.config["ARCHIVE_PATH"])
+    leo_a = arc / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22"
+    _light(leo_a / "Darks" / "d2.fit", "2026-03-23T01:20:00", imagetyp="Dark")
+    for dest, names in ((arc / "M66, M65, NGC (Leo-Triplett)", ("d.fit", "d2.fit")),
+                        (arc / "Mineral Moon" / "2026-05-25-100", ("d.fit",))):
+        (dest / "Darks").mkdir(parents=True, exist_ok=True)
+        for n in names:
+            shutil.copy2(leo_a / "Darks" / n, dest / "Darks" / n)
+    with app.app_context():
+        run_once(app)
+        copies = db.session.query(Issue).filter_by(code="calibration_copies").one()
+        assert "2 Darks" in copies.message and "3 Ordnern" in copies.message
+        assert copies.message.index("2026-03-22") < copies.message.index("Mineral Moon")   # oldest folder first
+        assert copies.hint.count("  ⇄  ") == 3
+
+
+def test_same_second_shot_is_not_a_copy(app):
+    """"x (2).raf" from a second shot in the same second differs in size; only a real copy is reported."""
+    import shutil
+    from pathlib import Path
+
+    from webapp.models import Issue
+    flats = Path(app.config["ARCHIVE_PATH"]) / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22" / "Flats"
+    _light(flats / "f.fit", "2026-03-23T02:00:00", exp=0.5, imagetyp="Flat")
+    shutil.copy2(flats / "f.fit", flats / "f (2).fit")                       # other shot, same second
+    with open(flats / "f (2).fit", "ab") as fh:
+        fh.write(b"\0" * 2880)
+    with app.app_context():
+        run_once(app)
+        assert not db.session.query(Issue).filter_by(code="duplicate_in_folder").count()
+    shutil.copy2(flats / "f.fit", flats / "f (3).fit")                       # real copy
+    with app.app_context():
+        run_once(app)
+        dup = db.session.query(Issue).filter_by(code="duplicate_in_folder").one()
+        assert dup.count == 1 and "f (3).fit  ⇄  " in dup.hint and dup.hint.rstrip().endswith("/f.fit")
+
+
+def test_several_archives(app, tmp_path):
+    """Switching to named archives takes the rows over (paths get the name, ids stay), targets with the
+    same catalogue number are merged across archives, a missing archive keeps its rows."""
+    import shutil
+
+    from webapp.models import IndexRun, SadFrame
+    arc = app.config["ARCHIVE_PATH"]
+    dwarf = tmp_path / "dwarf"
+    _light(dwarf / "M66 (Leo)" / "2026-04-02 DWARF3" / "Lights" / "d1.fit", "2026-04-02T22:00:00", exp=15.0,
+           camera="DWARF3", focal=150.0)
+    leo_a = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+    with app.app_context():
+        sid = db.session.query(Session).filter_by(root=leo_a).one().id
+        n_frames = db.session.query(Frame).count()
+    app.config["ARCHIVES"] = {"Astro": arc, "Dwarf": str(dwarf)}
+    with app.app_context():
+        run = run_once(app)
+        assert run.phase == "done", run.message
+        assert run.files_read == 1                                   # only the new DWARF light was read
+        paths = [f.path for f in db.session.query(Frame)]
+        assert len(paths) == n_frames + 1 and all(p.startswith(("Astro/", "Dwarf/")) for p in paths)
+        s = db.session.get(Session, sid)
+        assert s.root == "Astro/" + leo_a                            # same session, new root
+        d = db.session.query(Session).filter_by(root="Dwarf/M66 (Leo)/2026-04-02 DWARF3").one()
+        assert d.target_id == s.target_id                            # merged by catalogue number (M 66)
+        assert not db.session.query(Issue).filter_by(code="year_folder").count()
+        fid = db.session.query(SadFrame).first().id
+        dsid = d.id
+    c = app.test_client()
+    assert str(dwarf / "M66 (Leo)" / "2026-04-02 DWARF3") in c.get(f"/session/{dsid}").data.decode()
+    assert c.get(f"/sad/map/{fid}/Mosaic").status_code == 200
+    status = c.get("/status").data.decode()
+    assert "Archiv „Astro“" in status and "Archiv „Dwarf“" in status
+
+    shutil.rmtree(dwarf)                                             # mount gone
+    with app.app_context():
+        run = run_once(app)
+        assert run.phase == "done" and "Archiv „Dwarf“ nicht gefunden" in run.message
+        assert db.session.query(Frame).filter(Frame.path.startswith("Dwarf/")).count() == 1   # kept
+        assert db.session.query(IndexRun).count() >= 3
+    assert "nicht gefunden – Mount bzw. ARCHIVES prüfen" in c.get("/status").data.decode()
+    dwarf.mkdir()                                                    # empty mount point (Docker creates it)
+    with app.app_context():
+        run = run_once(app)
+        assert run.phase == "done" and "Archiv „Dwarf“ ist leer" in run.message
+        assert db.session.query(Frame).filter(Frame.path.startswith("Dwarf/")).count() == 1
+
+
+def test_fits_with_raw_extension(app):
+    """A FITS file renamed to .raf is read by its content (exposure counted) and reported; a .raf that is
+    neither RAF nor FITS is unreadable instead of a light without header."""
+    from pathlib import Path
+
+    lights = Path(app.config["ARCHIVE_PATH"]) / "Perseiden" / "2026-08-12" / "Lights"
+    _light(lights / "2026-08-13_03-50-32.raf", "2026-08-14T20:39:11.086170", camera="Canon EOS 550D")
+    lights.joinpath("kaputt.raf").write_bytes(b"\0" * 4096)
+    with app.app_context():
+        run_once(app)
+        f = db.session.query(Frame).filter(Frame.path.endswith("03-50-32.raf")).one()
+        assert f.exptime == 180.0 and f.date_obs is not None and f.camera == "Canon EOS 550D"
+        assert f.frame_type == "light" and f.error is None
+        bad = db.session.query(Frame).filter(Frame.path.endswith("kaputt.raf")).one()
+        assert "keine RAF-Datei" in bad.error
+        codes = {i.code: i for i in db.session.query(Issue).filter_by(session_root="Perseiden/2026-08-12")}
+        assert "missing_header" not in codes
+        w = codes["wrong_extension"]
+        assert w.message == "1 Datei(en) mit Endung „.raf“ sind FITS-Dateien" and "03-50-32.raf" in w.hint
+
+
+def test_foreign_lights(app):
+    """A light whose header names another object (or points elsewhere) than its folder is reported."""
+    from pathlib import Path
+
+    arc = Path(app.config["ARCHIVE_PATH"])
+    leo_a = arc / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22" / "Lights"
+    _fits(leo_a / "m31.fit", IMAGETYP="Light", EXPTIME=180.0, **{"DATE-OBS": "2026-03-23T02:30:00"},
+          INSTRUME="Canon EOS 1200D", FOCALLEN=755.0, RA=10.68, DEC=41.27, OBJECT="M 31")
+    _fits(leo_a / "named.fit", IMAGETYP="Light", EXPTIME=180.0, **{"DATE-OBS": "2026-03-23T02:40:00"},
+          INSTRUME="Canon EOS 1200D", FOCALLEN=755.0, RA=170.08, DEC=12.95, OBJECT="Leo Triplet")
+    per = arc / "Perseiden" / "2026-08-12"
+    _fits(per / "Lights" / "p.fit", IMAGETYP="Light", EXPTIME=180.0, **{"DATE-OBS": "2026-08-14T20:39:11"},
+          INSTRUME="Canon EOS 550D", RA=11.05, DEC=41.4, OBJECT="M 31")
+    with app.app_context():
+        run_once(app)
+        found = {(i.session_root, i.severity): i for i in db.session.query(Issue).filter_by(code="foreign_lights")}
+        leo = found[("M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22", "warning")]
+        assert leo.count == 1 and "OBJECT „M 31“" in leo.message and leo.hint.endswith("/m31.fit")
+        assert "named.fit" not in leo.hint                       # OBJECT without catalogue id, on target
+        per_i = found[("Perseiden/2026-08-12", "hint")]          # folder without catalogue number: hint
+        assert "OBJECT „M 31“" in per_i.message
+
+
+def test_acknowledge_issue(app):
+    """A acknowledged issue is hidden (also from the badge) until its message changes."""
+    from webapp.models import IssueAck
+    c = app.test_client()
+    with app.app_context():
+        i = db.session.query(Issue).filter_by(severity="error").first()
+        iid, msg, key = i.id, i.message, i.key
+    before = c.get("/checks").data.decode()
+    assert msg in before
+    r = c.post(f"/checks/{iid}/ack", data={"next": "/checks"})
+    assert r.status_code == 302
+    after = c.get("/checks").data.decode()
+    assert msg not in after and "1 quittiert" in after
+    assert msg in c.get("/checks?ack=1").data.decode()
+    with app.app_context():
+        run_once(app)                                            # survives a new index run
+        assert db.session.query(Issue).filter_by(message=msg).one().key == key
+        db.session.query(IssueAck).one().message = "älterer Text"  # message changed -> back again
+        db.session.commit()
+    assert msg in c.get("/checks").data.decode()
+    with app.app_context():
+        iid = db.session.query(Issue).filter_by(message=msg).one().id
+    c.post(f"/checks/{iid}/ack")
+    c.post(f"/checks/{iid}/unack")
+    assert msg in c.get("/checks").data.decode()
+
+
+def test_daily_backup(app):
+    """The first index run of a day copies the database; old copies beyond BACKUP_KEEP are removed."""
+    import sqlite3
+    from datetime import date
+
+    from webapp import backup
+    folder = backup.backup_dir(app.config)
+    today = folder / f"photonledger-{date.today().isoformat()}.db"
+    assert today.is_file()                                        # made by the fixture's index run
+    with sqlite3.connect(today) as con:
+        assert con.execute("select count(*) from frame").fetchone()[0] == 0   # state before that run
+    assert backup.daily(app.config) is None                       # once per day
+    app.config["BACKUP_KEEP"] = 2
+    for d in (date(2026, 1, 1), date(2026, 1, 2)):
+        assert backup.daily(app.config, today=d)
+    assert [b["name"] for b in backup.listing(app.config)] == [today.name, "photonledger-2026-01-02.db"]
+    status = app.test_client().get("/status").data.decode()
+    assert "2 von 2 Tageskopien" in status
+
+
+def test_version(app):
+    """The version comes from the VERSION file (or APPVERSION of the image) and is shown on the indexer page."""
+    from pathlib import Path
+
+    from webapp.config import VERSION
+    assert VERSION == (Path(__file__).parents[1] / "VERSION").read_text().strip()
+    assert VERSION.count(".") == 2
+    assert app.config["APPVERSION"] in app.test_client().get("/status").data.decode()

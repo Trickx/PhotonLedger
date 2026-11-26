@@ -1,18 +1,19 @@
 {% extends "layout.html" %}
 {% block title %}Prüfungen · Photon Ledger{% endblock %}
 {% block content %}
+{% set ak = '1' if show_ack else none %}
 <div class="pl-page">
     <h1>Prüfungen</h1>
     <p class="pl-lead">Automatische Prüfung der Ordnerstruktur und der Header nach jedem Indexlauf.
         Es wird nichts verändert – die Hinweise zeigen nur, wo sich Aufräumen lohnt.</p>
 
     <div class="pl-check-groups">
-        <a class="pl-check-group {% if not group %}active{% endif %}" href="{{ url_for('main.checks', s=sev) }}">
+        <a class="pl-check-group {% if not group %}active{% endif %}" href="{{ url_for('main.checks', s=sev, ack=ak) }}">
             <i class="bi bi-list-check"></i><span>Alle</span>
             <small>{{ totals.error + totals.warning + totals.hint }}</small></a>
         {% for key, label, icon, _ in groups %}
         {% set c = counts[key] %}
-        <a class="pl-check-group {% if group == key %}active{% endif %}" href="{{ url_for('main.checks', g=key, s=sev) }}">
+        <a class="pl-check-group {% if group == key %}active{% endif %}" href="{{ url_for('main.checks', g=key, s=sev, ack=ak) }}">
             <i class="bi {{ icon }}"></i><span>{{ label }}</span>
             <small>
                 {% if c.error %}<b class="text-danger">{{ c.error }}</b>{% endif %}
@@ -24,15 +25,22 @@
     </div>
 
     <div class="pl-sev-filter">
-        <a class="btn btn-sm {% if not sev %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('main.checks', g=group) }}">Alle Stufen</a>
+        <a class="btn btn-sm {% if not sev %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('main.checks', g=group, ack=ak) }}">Alle Stufen</a>
         {% for key, (label, icon, color) in SEVERITY.items() %}
         <a class="btn btn-sm {% if sev == key %}btn-{{ color }}{% else %}btn-outline-{{ color }}{% endif %}"
-           href="{{ url_for('main.checks', g=group, s=key) }}"><i class="bi {{ icon }}"></i> {{ label }} ({{ totals[key] }})</a>
+           href="{{ url_for('main.checks', g=group, s=key, ack=ak) }}"><i class="bi {{ icon }}"></i> {{ label }} ({{ totals[key] }})</a>
         {% endfor %}
+        {% if show_ack %}
+        <a class="btn btn-sm btn-secondary ms-auto" href="{{ url_for('main.checks', g=group, s=sev) }}"><i class="bi bi-arrow-left"></i> Offene Meldungen</a>
+        {% elif n_acked %}
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ url_for('main.checks', g=group, s=sev, ack='1') }}"
+           title="Quittierte Meldungen kommen zurück, sobald sich ihr Text ändert (z. B. neue Dateien)"><i class="bi bi-eye-slash"></i> {{ n_acked }} quittiert</a>
+        {% endif %}
     </div>
+    {% if show_ack %}<p class="pl-note">Quittierte Meldungen – sie erscheinen wieder, sobald sich ihr Text ändert.</p>{% endif %}
 
     {% if not issues %}
-    <div class="pl-empty"><i class="bi bi-check2-circle"></i><h2>Nichts zu beanstanden</h2></div>
+    <div class="pl-empty"><i class="bi bi-check2-circle"></i><h2>{% if show_ack %}Nichts quittiert{% else %}Nichts zu beanstanden{% endif %}</h2></div>
     {% endif %}
 
     <div class="pl-issues">
@@ -40,6 +48,11 @@
         {% set label, icon, color = SEVERITY[i.severity] %}
         <div class="pl-issue pl-issue-{{ i.severity }}">
             <i class="bi {{ icon }} text-{{ color }}" title="{{ label }}"></i>
+            <form class="pl-issue-ack" method="post" action="{{ url_for('main.check_unack' if show_ack else 'main.check_ack', iid=i.id) }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" class="btn btn-sm btn-link" title="{% if show_ack %}Wieder als offen anzeigen{% else %}Als bekannt quittieren – ausblenden, bis sich die Meldung ändert{% endif %}">
+                    <i class="bi {% if show_ack %}bi-arrow-counterclockwise{% else %}bi-check2{% endif %}"></i> {% if show_ack %}wieder anzeigen{% else %}quittieren{% endif %}</button>
+            </form>
             <div class="pl-issue-body">
                 <div class="pl-issue-msg">{{ i.message }}{% if i.count > 1 %} <span class="pl-count">· {{ i.count }} Dateien</span>{% endif %}</div>
                 <div class="pl-issue-meta">
@@ -49,7 +62,17 @@
                 {% if i.hint %}
                     {% if '\n' in i.hint %}{% set lines = i.hint.split('\n') %}
                     {% if lines[0].endswith('.') %}<div class="pl-issue-hint">{{ lines[0] }}</div>{% set lines = lines[1:] %}{% endif %}
+                    {% set ns = namespace(pairs=0, more=0) %}{% for line in lines %}{% if '  ⇄  ' in line %}{% set ns.pairs = ns.pairs + 1 %}{% elif line.startswith('… und ') %}{% set ns.more = line.split()[2]|int %}{% endif %}{% endfor %}
+                    {% if ns.pairs %}
+                    <details class="pl-pairs">
+                        <summary class="pl-note">{{ ns.pairs + ns.more }} Paar(e) identischer Dateien anzeigen{% if ns.more %} (die ersten {{ ns.pairs }}){% endif %}</summary>
+                        <ol class="pl-pair-list">{% for line in lines %}{% if '  ⇄  ' in line %}{% set a, b = line.split('  ⇄  ', 1) %}
+                            <li><code class="pl-path">{{ a }}</code><code class="pl-path pl-pair-b"><i class="bi bi-arrow-left-right"></i> {{ b }}</code></li>
+                            {% else %}<li class="pl-note list-unstyled">{{ line }}</li>{% endif %}{% endfor %}</ol>
+                    </details>
+                    {% else %}
                     <ul class="pl-issue-hint">{% for line in lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
+                    {% endif %}
                     {% else %}<div class="pl-issue-hint">{{ i.hint }}</div>{% endif %}
                 {% endif %}
             </div>

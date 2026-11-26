@@ -17,7 +17,9 @@ from webapp.archive.sad import _med, map_cache_name, summary
 
 from .routes import main
 
-SAD_PROBLEMS = ("sad_unreadable", "sad_tilt", "sad_edge", "sad_tracking")     # red dot
+SAD_ERRORS = ("sad_unreadable",)                               # red dot
+SAD_FINDINGS = ("sad_tilt", "sad_edge", "sad_tracking")         # hint dot: poor optics/tracking are hints only
+SAD_PROBLEMS = SAD_ERRORS + SAD_FINDINGS
 SAD_NOTES = ("sad_outliers", "sad_frame_errors")
 
 
@@ -28,8 +30,8 @@ def _sad_dot(s, blocks) -> dict:
 
 
 def sad_status(overview: dict[str, dict]) -> dict[str, dict]:
-    """session root -> dot status for SAD (missing = no SAD results): ok, or error when the checks found
-    tilt, edge, tracking or unreadable results; outliers are notes only."""
+    """session root -> dot status for SAD (missing = no SAD results): error for unreadable results, hint
+    when the checks found tilt, edge or tracking problems, else ok; outliers are notes only."""
     issues: dict[str, list] = {}
     for i in db.session.scalars(select(Issue).where(Issue.code.in_(SAD_PROBLEMS + SAD_NOTES))):
         if i.session_root:
@@ -39,7 +41,9 @@ def sad_status(overview: dict[str, dict]) -> dict[str, dict]:
         mine = issues.get(root, [])
         reasons = [i.message for i in mine if i.code in SAD_PROBLEMS]
         notes = [i.message for i in mine if i.code in SAD_NOTES]
-        out[root] = dict(status="error" if reasons else "ok", reasons=reasons, notes=notes, summary=sm)
+        status = ("error" if any(i.code in SAD_ERRORS for i in mine)
+                  else "hint" if reasons else "ok")
+        out[root] = dict(status=status, reasons=reasons, notes=notes, summary=sm)
     return out
 
 
@@ -107,7 +111,9 @@ def session_page(sid: int):
                 for r, how in [res.resolve(s.root, d["camera"], d["focal"])]]
     from webapp.main.phd_view import guiding_summary
     from webapp.main.wbpp_view import session_runs
-    return render_template("session.html", s=s, t=s.target, archive_path=current_app.config["ARCHIVE_PATH"],
+    from webapp.archive import archives
+    folder = archives.resolve(current_app.config, s.root)
+    return render_template("session.html", s=s, t=s.target, folder=str(folder) if folder else s.root,
                            wbpp=session_runs(s), sad_status=_sad_dot(s, blocks), blocks=blocks, map_labels=MAP_LABELS,
                            side_colors=SIDE_COLORS, rig_rows=rig_rows, all_rigs=res.rigs,
                            guiding=guiding_summary(s), night=_night(s))
@@ -143,8 +149,17 @@ def sad_map(fid: int, kind: str):
     big = request.args.get("size") == "full"
     data = Path(current_app.config["DATA_PATH"])
     out = data / map_cache_name(rel, big)
-    src = Path(current_app.config["ARCHIVE_PATH"]) / rel
-    if not out.is_file() or out.stat().st_mtime < src.stat().st_mtime:
+    from webapp.archive import archives
+    src = archives.resolve(current_app.config, rel)
+    try:
+        if src is None:
+            raise FileNotFoundError(rel)
+        src_mtime = src.stat().st_mtime
+    except OSError:                      # archive not mounted / file gone: serve what is cached
+        src_mtime = None
+        if not out.is_file():
+            abort(404)
+    if src_mtime is not None and (not out.is_file() or out.stat().st_mtime < src_mtime):
         out.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(src) as im:
             im = im.convert("RGB")

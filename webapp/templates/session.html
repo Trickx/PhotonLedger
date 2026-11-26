@@ -4,7 +4,7 @@
 <div class="pl-page">
     {% if t %}<a class="pl-back" href="{{ url_for('main.target', tid=t.id) }}"><i class="bi bi-arrow-left"></i> {{ t.name }}{% if t.common_name %} · {{ t.common_name }}{% endif %}</a>{% endif %}
     <h1>Session {{ s.date|de_date }}</h1>
-    <p class="pl-lead"><span class="text-body-secondary">Ordner:</span> <code class="pl-path">{{ archive_path.rstrip('/') }}/{{ s.root }}</code>{% if s.nights|length > 1 %} · {{ s.nights|length }} Nächte{% endif %}
+    <p class="pl-lead"><span class="text-body-secondary">Ordner:</span> <code class="pl-path">{{ folder }}</code>{% if s.nights|length > 1 %} · {{ s.nights|length }} Nächte{% endif %}
         {% if s.duplicate_of %}<br><span class="text-warning">Kopie von {{ s.duplicate_of }}</span>{% endif %}</p>
 
     <div class="pl-tiles">

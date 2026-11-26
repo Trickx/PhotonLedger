@@ -97,7 +97,7 @@ _DATE_RE = re.compile(r"(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01]
 
 
 PROCESSING_DIR = "Processing"   # the one folder name where intermediate results belong
-FINALS_DIR = "Finals"           # allowed directly in a session folder (results of that session)
+FINALS_DIR = "Finals"           # results of a target or a session, in any format
 
 
 def in_processing(rel_path: str) -> bool:
@@ -115,15 +115,14 @@ def is_final_name(name: str) -> bool:
     return "final" in name.rsplit("/", 1)[-1].lower()
 
 
-def in_session_finals(rel_path: str, session_roots=()) -> bool:
-    """True if the file lies in a folder 'Finals' directly inside a session folder."""
-    dirs = rel_path.split("/")[:-1]
-    return any(d == FINALS_DIR and "/".join(dirs[:i]) in session_roots for i, d in enumerate(dirs) if i)
+def in_finals(rel_path: str) -> bool:
+    """True if a folder named exactly 'Finals' (of a target or a session) is part of the path."""
+    return FINALS_DIR in rel_path.split("/")[:-1]
 
 
 def allowed_location(rel_path: str, session_roots=()) -> bool:
-    """Where intermediate results may lie: anywhere below 'Processing', or in '<session>/Finals'."""
-    return in_processing(rel_path) or in_session_finals(rel_path, session_roots)
+    """Where intermediate results may lie: anywhere below 'Processing' or 'Finals'."""
+    return in_processing(rel_path) or in_finals(rel_path)
 
 
 # Rules for intermediate results, most important first: (code, label, severity)
@@ -135,7 +134,7 @@ INTERMEDIATE_RULES = [
     ("wbpp_ok", "WBPP-Ergebnis (masterLight / autocrop)", "ok"),
     ("final", "Final in Processing/master", "ok"),
     ("processing_master", "Zwischenschritt in Processing/master – erlaubt", "ok"),
-    ("session_finals", "In „<Session>/Finals“ – in Ordnung", "ok"),
+    ("finals", "In „Finals“ – in Ordnung", "ok"),
     ("ok", "In „Processing“ – in Ordnung", "ok"),
 ]
 INTERMEDIATE_RULE_INFO = {c: (label, sev) for c, label, sev in INTERMEDIATE_RULES}
@@ -159,7 +158,7 @@ def intermediate_findings(rel_path: str, session_roots=()) -> list[str]:
         out.append("wbpp_other")
     if not out:
         out.append("wbpp_ok" if kind == "ok" else
-                   "session_finals" if in_session_finals(rel_path, session_roots) else "ok")
+                   "finals" if in_finals(rel_path) else "ok")
     return out
 
 

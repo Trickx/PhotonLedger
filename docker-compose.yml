@@ -1,6 +1,6 @@
 # Photon Ledger – astrophotography archive
 #
-#   ARCHIVE_PATH  your image archive, mounted read-only
+#   ARCHIVE_PATH  your image archive, mounted read-only (several archives: see volumes below)
 #   ./data        database (SQLite), thumbnails – bind mount on the host, no docker volume
 #
 # Settings: copy .env.example to .env and adjust.
@@ -19,6 +19,9 @@ x-photonledger: &photonledger
   volumes:
     - ${ARCHIVE_PATH:-/share/Multimedia/Astro}:/archive:ro
     - ./data:/data
+    # several archives: one read-only mount each below /archives and FLASK_ARCHIVES in .env, e.g.
+    #   - /share/Multimedia/Astro:/archives/Astro:ro
+    #   - /share/Backup/Dwarf:/archives/Dwarf:ro
   env_file: .env
 
 services:

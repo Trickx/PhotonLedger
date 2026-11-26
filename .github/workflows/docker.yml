@@ -1,7 +1,8 @@
 # Build the Docker image on every push and publish it to the GitHub Container Registry.
 #
-#   push to main      -> ghcr.io/<owner>/photonledger:latest and :sha-<commit>
-#   tag v1.2.3        -> ghcr.io/<owner>/photonledger:1.2.3 and :1.2
+#   push to main      -> ghcr.io/<owner>/photonledger:latest and :sha-<commit>   (version 1.2.3-dev.<commit>)
+#   tag v1.2.3        -> ghcr.io/<owner>/photonledger:1.2.3 and :1.2             (version 1.2.3)
+#                        the tag must match the VERSION file, otherwise the build stops
 #   other branches    -> tests and image build only (nothing is published)
 #
 # The tests run first; the image is built for amd64 (most NAS) and arm64 (Apple Silicon, ARM NAS).
@@ -58,10 +59,16 @@ jobs:
       - name: Version
         id: version
         run: |
+          file=$(tr -d '[:space:]' < VERSION)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "app=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            if [[ "${GITHUB_REF_NAME#v}" != "$file" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Datei VERSION ($file)"; exit 1
+            fi
+            echo "app=$file" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "app=$file-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           else
-            echo "app=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "app=$file-${GITHUB_REF_NAME//\//-}.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: docker/metadata-action@v5

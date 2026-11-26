@@ -16,10 +16,24 @@ except FileNotFoundError:
 _data = config.get("DATA_PATH", "./data")
 
 
+def _version() -> str:
+    """Release number from the VERSION file (the image passes its own APPVERSION)."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")) as fh:
+            return fh.read().strip()
+    except OSError:
+        return "0.0.0"
+
+
+VERSION = _version()
+
+
 class Config:
     SECRET_KEY = config.get("SECRET_KEY", "change-me")
     # read-only archive root and writable data folder (database, thumbnails)
     ARCHIVE_PATH = config.get("ARCHIVE_PATH", "./archive")
+    # several archives: {"<name>": "<path>", …}; stored paths then start with the name (ARCHIVE_PATH is unused)
+    ARCHIVES = config.get("ARCHIVES")
     DATA_PATH = _data
     # None = <DATA_PATH>/photonledger.db (resolved in create_app, after env overrides)
     SQLALCHEMY_DATABASE_URI = config.get("SQLALCHEMY_DATABASE_URI")
@@ -44,7 +58,8 @@ class Config:
     PHD_SETTLE_FAILED = int(config.get("PHD_SETTLE_FAILED", 3))         # failed settlings per session …
     PHD_SETTLE_RATIO = float(config.get("PHD_SETTLE_RATIO", 0.10))      # … or share of dithers
     PHD_RMS_ERROR = float(config.get("PHD_RMS_ERROR", 5.0))             # arcsec RMS of a longer section
+    BACKUP_KEEP = int(config.get("BACKUP_KEEP", 14))   # daily database copies in DATA_PATH/backups, 0 = none
     THUMB_SIZE = int(config.get("THUMB_SIZE", 480))
     PREVIEW_SIZE = int(config.get("PREVIEW_SIZE", 2000))
-    APPVERSION = os.environ.get("APPVERSION", "local")
+    APPVERSION = os.environ.get("APPVERSION") or f"{VERSION}-local"
     GITCOMMIT = os.environ.get("GITCOMMIT", "")

@@ -16,7 +16,7 @@ from sqlalchemy import delete, select, update
 from webapp import db
 from webapp.models import Frame, IndexRun, Intermediate, RigSessionOverride, Session, Target, Version
 
-from . import nightlog, phd2, rules, sad, wbpp
+from . import archives, nightlog, phd2, rules, sad, wbpp
 from .headers import read_header
 
 log = logging.getLogger("photonledger.scan")
@@ -29,9 +29,10 @@ def _prune(dirs: list[str], ignore: list[str]) -> None:
 
 
 def scan(cfg: dict, run: IndexRun) -> None:
-    archive = Path(cfg["ARCHIVE_PATH"])
-    if not archive.is_dir():
-        raise RuntimeError(f"Archiv nicht gefunden: {archive}")
+    archive_list = archives.configured(cfg)
+    reachable = [a for a in archive_list if a.path.is_dir()]
+    if not reachable:
+        raise RuntimeError("Archiv nicht gefunden: " + ", ".join(str(a.path) for a in archive_list))
     ignore = cfg.get("IGNORE_DIRS") or []
     cap = cfg["MAX_VERSIONS_PER_DIR"]
     offset = cfg["NIGHT_OFFSET_HOURS"]
@@ -42,7 +43,8 @@ def scan(cfg: dict, run: IndexRun) -> None:
     seen: dict[str, list[int]] = {k: [] for k in models}
     pending = 0
     # moved files: same name, size and mtime under a new path while the old path is gone
-    # (e.g. after reorganising the archive) - the row is taken over instead of reading the file again
+    # (e.g. after reorganising the archive or adding archive names) - the row is taken over
+    # instead of reading the file again
     signatures: dict[str, dict[tuple, list[str]]] | None = None
     moved: dict[str, list[tuple[str, str]]] = {k: [] for k in models}
     moved_roots: dict[str, str] = {}                  # session root before -> after the move
@@ -55,7 +57,13 @@ def scan(cfg: dict, run: IndexRun) -> None:
                 for p, (_, size, mtime) in rows.items():
                     signatures[k].setdefault((p.rsplit("/", 1)[-1], size, round(mtime, 3)), []).append(p)
         for old in signatures[kind].get((name, st.st_size, round(st.st_mtime, 3)), []):
-            if old in known_rows[kind] and not (archive / old).exists():
+            if old not in known_rows[kind]:
+                continue
+            a_old, _ = archives.split(cfg, old)
+            if a_old is not None and a_old not in reachable:
+                continue                              # its archive is not mounted: not a move
+            full = archives.resolve(cfg, old)
+            if full is None or not full.exists():
                 return old
         return None
 
@@ -75,71 +83,83 @@ def scan(cfg: dict, run: IndexRun) -> None:
     wbpp_logs: list[str] = []
     # folders that could not be read (SMB hiccup, permissions): nothing below them is deleted this run
     failed: set[str] = set()
+    problems: list[str] = []
+    for a in archive_list:
+        if a not in reachable:                        # named archive not mounted: keep what we know
+            failed.add(a.name)
+            problems.append(f"Archiv „{a.name}“ nicht gefunden ({a.path})")
+            log.warning(problems[-1])
 
-    def rel_of(p: str) -> str:
-        r = os.path.relpath(p, archive).replace(os.sep, "/")
-        return "" if r == "." else r
+    for archive in reachable:
+        if archive.name:
+            log.info("Archiv „%s“: %s", archive.name, archive.path)
+        seen_before = run.files_seen
 
-    def on_walk_error(e: OSError):
-        failed.add(rel_of(e.filename) if e.filename else "")
-        log.warning("Ordner nicht lesbar: %s (%s)", e.filename, e.strerror)
+        def on_walk_error(e: OSError, archive=archive):
+            failed.add(archive.rel(e.filename) if e.filename else archive.name)
+            log.warning("Ordner nicht lesbar: %s (%s)", e.filename, e.strerror)
 
-    for dirpath, dirs, files in os.walk(archive, onerror=on_walk_error):
-        rel_here = os.path.relpath(dirpath, archive).replace(os.sep, "/")
-        for d in dirs:
-            if sad.is_sad_dir(dirpath, d):
-                sad_dirs.append(f"{rel_here}/{d}" if rel_here != "." else d)
-        phd_logs += phd2.find_logs(dirpath, dirs, failed=failed, base=archive)
-        night_logs += nightlog.find_logs(dirpath, dirs, failed=failed, base=archive)
-        wbpp_logs += wbpp.find_logs(dirpath, dirs, failed=failed, base=archive)
-        _prune(dirs, ignore)
-        dirs.sort()
-        rel_dir = os.path.relpath(dirpath, archive)
-        rel_dir = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")
-        items = []
-        for name in sorted(files):
-            rel = f"{rel_dir}/{name}" if rel_dir else name
-            c = rules.classify(rel, ignore)
-            if c:
-                items.append((rel, name, c))
-        n_versions = sum(1 for _, _, c in items if c.kind == "version")
-        for rel, name, c in items:
-            if c.kind == "version" and n_versions > cap:
-                continue                     # burst / registered sequences, not results
-            known = known_rows[c.kind].get(rel)
-            try:
-                st = os.stat(os.path.join(dirpath, name))
-            except OSError as e:
-                # listed but not readable right now: keep what we know about it
-                log.warning("Datei nicht lesbar: %s (%s)", rel, e.strerror)
-                if known:
+        for dirpath, dirs, files in os.walk(archive.path, onerror=on_walk_error):
+            rel_here = archive.rel(dirpath)
+            for d in dirs:
+                if sad.is_sad_dir(dirpath, d):
+                    sad_dirs.append(f"{rel_here}/{d}" if rel_here else d)
+            phd_logs += phd2.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
+            night_logs += nightlog.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
+            wbpp_logs += wbpp.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
+            _prune(dirs, ignore)
+            dirs.sort()
+            inner_dir = os.path.relpath(dirpath, archive.path).replace(os.sep, "/")
+            inner_dir = "" if inner_dir == "." else inner_dir
+            items = []
+            for name in sorted(files):
+                inner_rel = f"{inner_dir}/{name}" if inner_dir else name
+                c = archives.classify(archive, inner_rel, ignore)
+                if c:
+                    items.append((archive.prefix + inner_rel, name, c))
+            n_versions = sum(1 for _, _, c in items if c.kind == "version")
+            for rel, name, c in items:
+                if c.kind == "version" and n_versions > cap:
+                    continue                     # burst / registered sequences, not results
+                known = known_rows[c.kind].get(rel)
+                try:
+                    st = os.stat(os.path.join(dirpath, name))
+                except OSError as e:
+                    # listed but not readable right now: keep what we know about it
+                    log.warning("Datei nicht lesbar: %s (%s)", rel, e.strerror)
+                    if known:
+                        seen[c.kind].append(known[0])
+                    failed.add(rel)
+                    continue
+                run.files_seen += 1
+                if known and known[1] == st.st_size and abs(known[2] - st.st_mtime) < 1e-3:
                     seen[c.kind].append(known[0])
-                failed.add(rel)
-                continue
-            run.files_seen += 1
-            if known and known[1] == st.st_size and abs(known[2] - st.st_mtime) < 1e-3:
-                seen[c.kind].append(known[0])
-                continue
-            if not known and (old := find_moved(c.kind, name, st)):
-                row_id = known_rows[c.kind].pop(old)[0]
-                old_root = _move(models[c.kind], row_id, rel, c, run)
-                if old_root and c.session_root:
-                    moved_roots.setdefault(old_root, c.session_root)
-                moved[c.kind].append((old, rel))
+                    continue
+                if not known and (old := find_moved(c.kind, name, st)):
+                    row_id = known_rows[c.kind].pop(old)[0]
+                    old_root = _move(models[c.kind], row_id, rel, c, run)
+                    if old_root and c.session_root:
+                        moved_roots.setdefault(old_root, c.session_root)
+                    moved[c.kind].append((old, rel))
+                    pending += 1
+                    continue
+                run.files_read += 1
+                if c.kind == "frame":
+                    _store_frame(rel, Path(dirpath, name), st, c, run, offset, known)
+                elif c.kind == "version":
+                    _store_version(rel, st, c, run, known)
+                else:
+                    _store_intermediate(rel, st, c, run, known)
                 pending += 1
-                continue
-            run.files_read += 1
-            if c.kind == "frame":
-                _store_frame(rel, Path(dirpath, name), st, c, run, offset, known)
-            elif c.kind == "version":
-                _store_version(rel, st, c, run, known)
-            else:
-                _store_intermediate(rel, st, c, run, known)
-            pending += 1
-            if pending >= COMMIT_EVERY:
-                flush()
-                log.info("… %d Dateien gesehen, %d gelesen", run.files_seen, run.files_read)
-    flush()
+                if pending >= COMMIT_EVERY:
+                    flush()
+                    log.info("… %d Dateien gesehen, %d gelesen", run.files_seen, run.files_read)
+        flush()
+        if archive.name and run.files_seen == seen_before and any(
+                p.startswith(archive.prefix) for rows in known_rows.values() for p in rows):
+            failed.add(archive.name)                  # empty mount point: keep its rows
+            problems.append(f"Archiv „{archive.name}“ ist leer oder nicht eingebunden")
+            log.warning(problems[-1])
 
     if run.files_seen == 0 and any(known_rows.values()):
         raise RuntimeError("Archiv ist leer oder nicht eingebunden – nichts gelöscht.")
@@ -154,11 +174,14 @@ def scan(cfg: dict, run: IndexRun) -> None:
     db.session.commit()
     if removed:
         log.info("%d nicht mehr vorhandene Dateien entfernt", removed)
-    if failed:
+    unread = sorted(f for f in failed if f not in {a.name for a in archive_list})
+    if unread:
+        problems.append(f"{len(unread)} Ordner/Datei(en) nicht lesbar – darin nichts gelöscht: "
+                        + ", ".join(unread[:5]) + (" …" if len(unread) > 5 else ""))
+        log.warning(problems[-1])
+    if problems:
         run.errors += len(failed)
-        run.message = (f"{len(failed)} Ordner/Datei(en) nicht lesbar – darin nichts gelöscht: "
-                       + ", ".join(sorted(failed)[:5]) + (" …" if len(failed) > 5 else ""))
-        log.warning(run.message)
+        run.message = "; ".join(problems)
     sad.sync(cfg, run, sad_dirs, protect=failed)
     phd2.sync(cfg, run, phd_logs, protect=failed)
     nightlog.sync(cfg, run, night_logs, protect=failed)

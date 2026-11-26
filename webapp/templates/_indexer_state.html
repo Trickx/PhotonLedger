@@ -29,10 +29,23 @@
             {% if last.finished %}– {{ last.finished|de_date('%H:%M') }} ({{ (last.finished - last.started).total_seconds()|duration }}){% else %}– läuft{% endif %}
             · <span class="badge {% if last.phase == 'done' %}text-bg-success{% elif last.phase == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ last.phase }}</span>
             · {{ last.files_seen|num }} Dateien gesehen, {{ last.files_read|num }} gelesen{% if last.errors %}, <span class="text-warning">{{ last.errors }} Fehler</span>{% endif %}
+            {% if last.phase == 'failed' %}<div class="text-danger">{{ last.message }}</div>{% elif last.message and last.errors %}<div class="text-warning">{{ last.message }}</div>{% endif %}
             {% else %}noch keiner{% endif %}</dd>
+        {% for a in st.archives %}
+        <dt>{% if a.name %}Archiv „{{ a.name }}“{% else %}Archiv{% endif %}</dt>
+        <dd>{% if a.state == 'ok' %}<span class="pl-dot pl-dot-ok"></span>erreichbar
+            {% elif a.state == 'empty' %}<span class="pl-dot pl-dot-error"></span><b class="text-danger">leer – nicht eingebunden?</b>
+            {% else %}<span class="pl-dot pl-dot-error"></span><b class="text-danger">nicht gefunden – Mount bzw. {% if a.name %}ARCHIVES{% else %}ARCHIVE_PATH{% endif %} prüfen</b>{% endif %}
+            <code>{{ a.path }}</code>{% if a.name and a.state != 'ok' %} <span class="pl-note">– Einträge dieses Archivs bleiben erhalten</span>{% endif %}</dd>
+        {% endfor %}
         <dt>Nächster Lauf</dt>
         <dd>{% if st.running %}nach Ende des laufenden{% elif st.next_run %}{{ st.next_run|de_date('%d.%m.%Y %H:%M') }}{% elif st.service %}gleich{% else %}nicht geplant – nur von Hand{% endif %}</dd>
         {% set ag = st.airgus %}
+        <dt>Sicherung</dt>
+        <dd>{% if not st.backup_keep %}<span class="pl-dot pl-dot-none"></span>aus <span class="pl-note">(<code>BACKUP_KEEP</code> = 0)</span>
+            {% elif st.backups %}<span class="pl-dot pl-dot-ok"></span>zuletzt {{ st.backups[0].time|de_date('%d.%m.%Y %H:%M') }}
+                · {{ st.backups|length }} von {{ st.backup_keep }} Tageskopien in <code>data/backups</code>
+            {% else %}<span class="pl-dot pl-dot-none"></span>noch keine – beim nächsten Indexlauf{% endif %}</dd>
         <dt>Airgus</dt>
         <dd>{% if not ag.installed %}
                 <span class="pl-dot pl-dot-none"></span>nicht installiert
