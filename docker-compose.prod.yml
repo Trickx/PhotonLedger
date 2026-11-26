@@ -18,6 +18,8 @@ x-photonledger: &photonledger
   pull_policy: missing               # never build; "docker compose pull" fetches updates
   user: "${PUID:-1000}:${PGID:-1000}"
   restart: unless-stopped
+  init: true                         # tini as PID 1: passes "docker compose down" on at once (no 10 s wait)
+  stop_grace_period: 20s             # time for a running index pass to record that it was stopped
   volumes:
     - ${ARCHIVE_PATH:-/share/Multimedia/Astro}:/archive:ro
     - ./data:/data

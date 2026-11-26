@@ -15,6 +15,8 @@ import fcntl
 import json
 import logging
 import os
+import signal
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -143,6 +145,14 @@ def _run(app) -> IndexRun:
         run.phase = "failed"
         run.message = str(e) if type(e) is RuntimeError else f"{type(e).__name__}: {e}"
         log.exception("Indexlauf fehlgeschlagen")
+    except (SystemExit, KeyboardInterrupt):
+        # container stopped during a run: record it (else the run would show "läuft" forever)
+        db.session.rollback()
+        run = db.session.get(IndexRun, run.id)
+        run.phase, run.message, run.finished = "failed", "abgebrochen – Indexer wurde beendet", scanner.now()
+        db.session.commit()
+        log.warning("Indexlauf %s abgebrochen", run.id)
+        raise
     run.finished = scanner.now()
     db.session.commit()
     log.info("Lauf %s: %s – %d gesehen, %d gelesen, %d Fehler",
@@ -155,6 +165,8 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="einmal scannen und beenden")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    # "docker stop": end at once while waiting, record an interrupted run (also as PID 1 without init)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     app = create_app()
     with app.app_context():
         cfg = app.config
