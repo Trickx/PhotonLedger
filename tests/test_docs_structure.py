@@ -3,7 +3,7 @@ import pytest
 
 from webapp.archive import rules
 
-T = "2026/M97, M108 (Owl, Surfboard)"
+T = "M97, M108 (Owl, Surfboard)"
 S = f"{T}/2026-04-28"
 
 
@@ -22,7 +22,7 @@ S = f"{T}/2026-04-28"
     (f"{T}/Finals/stack.xisf", ("intermediate",)),                 # FITS/XISF in Finals: intermediate
     (f"{S}/Lights/SAD/x_Size.png", None),                          # read by the SAD importer, not as file
     (f"{S}/Logs/PHD2_GuideLog_2026-04-28_222144.txt", None),       # read by the log importers
-    ("2026/Mineral Moon/2026-05-25/Lights/m.fit", ("frame", "2026/Mineral Moon/2026-05-25", "light", False)),
+    ("Mineral Moon/2026-05-25/Lights/m.fit", ("frame", "Mineral Moon/2026-05-25", "light", False)),
 ])
 def test_documented_paths(path, expected):
     c = rules.classify(path)

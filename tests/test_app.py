@@ -31,14 +31,14 @@ def _light(path, date, exp=180.0, focal=755.0, camera="Canon EOS 1200D", ra=170.
 @pytest.fixture()
 def app(tmp_path):
     arc = tmp_path / "archive"
-    leo_a = arc / "2026" / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22"
+    leo_a = arc / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22"
     for i in range(3):
         _light(leo_a / "Lights" / f"l{i}.fit", f"2026-03-22T2{i}:00:00", focal=752.7 + i)
     _light(leo_a / "Lights" / "REJECTED" / "r.fit", "2026-03-22T23:30:00")
     _light(leo_a / "Flats" / "f.fit", "2026-03-23T00:10:00", exp=0.07, imagetyp="Flat")
     _light(leo_a / "Darks" / "d.fit", "2026-03-23T01:10:00", imagetyp="Dark")
     _fits(leo_a / "Processing" / "stack.fit", NAXIS3=3, EXPTIME=120.0)        # ignored
-    leo_b = arc / "2026" / "M66, M65, NGC (Leo-Triplett)"
+    leo_b = arc / "M66, M65, NGC (Leo-Triplett)"
     _light(leo_b / "Lights" / "x.fit", "2026-03-29T21:00:00", exp=120.0, focal=792.0, camera="Canon EOS 7D MarkII")
     _light(leo_b / "Lights" / "copy_of_l0.fit", "2026-03-22T20:00:00", focal=752.7)   # same light as l0.fit
     _fits(leo_b / "loose_stack.fit", NAXIS3=3, EXPTIME=120.0, IMAGETYP="Light", **{"DATE-OBS": "2026-03-29T21:00:00"})
@@ -126,10 +126,10 @@ def app(tmp_path):
     (leo_a / "Finals").mkdir(parents=True)
     (leo_a / "Finals" / "leo_session.xisf").write_bytes(b"XISF0100")             # <session>/Finals is allowed
     Image.new("RGB", (64, 48), (20, 20, 30)).save(leo_a / "Finals" / "leo.jpg")
-    moon = arc / "2026" / "Mineral Moon" / "2026-05-25-100"
+    moon = arc / "Mineral Moon" / "2026-05-25-100"
     _light(moon / "m.fit", "2026-05-25T20:17:00", exp=0.01, ra=178.4, dec=-1.9)
-    (arc / "2026" / "Leer").mkdir(parents=True)
-    with open(arc / "2026" / "M65, M66, NGC 3628 (Leo-Triplett)" / "kaputt.fit", "wb") as fh:
+    (arc / "Leer").mkdir(parents=True)
+    with open(arc / "M65, M66, NGC 3628 (Leo-Triplett)" / "kaputt.fit", "wb") as fh:
         fh.write(b"not a fits file")
 
     class TestConfig(Config):
@@ -190,14 +190,14 @@ def test_structure_checks(app):
     from webapp.models import Issue
     with app.app_context():
         codes = {(i.code, i.session_root) for i in db.session.query(Issue)}
-        leo_a = "2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
-        leo_b = "2026/M66, M65, NGC (Leo-Triplett)"
+        leo_a = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+        leo_b = "M66, M65, NGC (Leo-Triplett)"
         assert ("darks_bias_present", leo_a) in codes            # darks are reported
         assert ("no_session_folder", leo_b) in codes             # Lights directly in the target folder
         assert ("duplicate", leo_b) in codes                     # copy of l0.fit
         assert ("no_flats", leo_b) in codes
-        assert ("loose_frames", "2026/Mineral Moon/2026-05-25-100") in codes
-        assert ("no_flats", "2026/Mineral Moon/2026-05-25-100") not in codes   # no flats needed for the Moon
+        assert ("loose_frames", "Mineral Moon/2026-05-25-100") in codes
+        assert ("no_flats", "Mineral Moon/2026-05-25-100") not in codes   # no flats needed for the Moon
         assert ("dark_exposure", leo_a) not in codes             # 180 s darks for 180 s lights
         assert any(c == "unreadable" for c, _ in codes)
         places = {i.path for i in db.session.query(Issue).filter_by(code="intermediate_location")}
@@ -253,18 +253,18 @@ def test_phd2_guiding(app):
     assert "<polyline" in graph and "pl-dither" in graph and "pl-exp" in graph
     # the other session (no overlap in time) shows no guiding
     with app.app_context():
-        other = db.session.query(Session).filter_by(root="2026/Mineral Moon/2026-05-25-100").one().id
+        other = db.session.query(Session).filter_by(root="Mineral Moon/2026-05-25-100").one().id
     assert "Guiding (PHD2)" not in c.get(f"/session/{other}").data.decode()
     # status dots in the session overview: green (log, no problems) / orange (no log) / red (problems)
     from webapp.main.phd_view import guiding_status
     with app.app_context():
         st = guiding_status()
-        assert st["2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"]["status"] == "ok"
-        assert st["2026/Mineral Moon/2026-05-25-100"]["status"] == "none"
+        assert st["M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"]["status"] == "ok"
+        assert st["Mineral Moon/2026-05-25-100"]["status"] == "none"
         sec = db.session.query(PhdSection).one()
         sec.settle_failed = 3
         db.session.commit()
-        bad = guiding_status()["2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"]
+        bad = guiding_status()["M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"]
         assert bad["status"] == "error" and "Settling" in bad["reasons"][0]
     page = c.get("/sessions").data.decode()
     assert "pl-dot-error" in page and "pl-dot-none" in page
@@ -276,8 +276,8 @@ def test_night_log_with_airgus(app):
         kinds = {n.kind for n in db.session.query(NightLog)}
         assert kinds == {"asiair", "phd2"}
         a = db.session.query(NightAnalysis).filter_by(
-            session_root="2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22").one()
-        assert db.session.query(NightAnalysis).filter_by(session_root="2026/Mineral Moon/2026-05-25-100").count() == 0
+            session_root="M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22").one()
+        assert db.session.query(NightAnalysis).filter_by(session_root="Mineral Moon/2026-05-25-100").count() == 0
         assert a.summary["exposures"] == 2 and a.summary["targets"] == ["M 65"]
         lost = [al for al in a.alerts if al["rule"] == "star-lost"]
         assert lost and lost[0]["time"].startswith("2026-03-22T20:20")      # 21:20 CET -> 20:20 UTC
@@ -297,7 +297,7 @@ def test_wbpp_log(app):
     from webapp.models import Issue, WbppRun
     with app.app_context():
         w = db.session.query(WbppRun).one()
-        assert w.target_folder == "2026/M65, M66, NGC 3628 (Leo-Triplett)"
+        assert w.target_folder == "M65, M66, NGC 3628 (Leo-Triplett)"
         assert (w.pi_version, w.wbpp_version, w.duration_s) == ("1.9.6 Lockhart (arm64)", "3.2.0", 353.36)
         assert w.lights_used == ["l0", "l1"] and wbpp.master_written(w)
         assert w.frames["l0"] == {"noise": 0.003, "psf_fits": 1400, "rejected_pct": 2.906}
@@ -336,7 +336,7 @@ def test_star_aberration_diagnostics(app):
     from webapp.models import Issue, SadFrame, SadSeries
     with app.app_context():
         sr = db.session.query(SadSeries).one()
-        assert sr.session_root == "2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+        assert sr.session_root == "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
         assert len(sr.frames) == 3 and all(f.frame_id for f in sr.frames)      # linked to the lights
         assert sr.ai_reviews[0]["verdict"].startswith("Alles gut")
         f0 = next(f for f in sr.frames if f.name == "l0.fit")
@@ -425,9 +425,9 @@ def test_unreadable_folder_is_not_deleted(app):
     import os
     import stat
     arc = app.config["ARCHIVE_PATH"]
-    folder = os.path.join(arc, "2026", "M66, M65, NGC (Leo-Triplett)")
+    folder = os.path.join(arc, "M66, M65, NGC (Leo-Triplett)")
     with app.app_context():
-        before = db.session.query(Frame).filter(Frame.target_folder == "2026/M66, M65, NGC (Leo-Triplett)").count()
+        before = db.session.query(Frame).filter(Frame.target_folder == "M66, M65, NGC (Leo-Triplett)").count()
         assert before > 0
         os.chmod(folder, 0)                       # like an SMB hiccup: the folder cannot be listed
         try:
@@ -435,7 +435,7 @@ def test_unreadable_folder_is_not_deleted(app):
         finally:
             os.chmod(folder, stat.S_IRWXU)
         assert run.phase == "done" and "nicht lesbar" in run.message
-        after = db.session.query(Frame).filter(Frame.target_folder == "2026/M66, M65, NGC (Leo-Triplett)").count()
+        after = db.session.query(Frame).filter(Frame.target_folder == "M66, M65, NGC (Leo-Triplett)").count()
         assert after == before                    # nothing below the unreadable folder was removed
 
 
@@ -466,7 +466,7 @@ def test_rescan_is_incremental_and_removes_deleted(app):
         run = run_once(app)
         assert run.files_read == 0                   # nothing changed
         arc = app.config["ARCHIVE_PATH"]
-        os.remove(os.path.join(arc, "2026", "Mineral Moon", "2026-05-25-100", "m.fit"))
+        os.remove(os.path.join(arc, "Mineral Moon", "2026-05-25-100", "m.fit"))
         run_once(app)
         assert db.session.query(Target).filter_by(name="Mineral Moon").count() == 0
 
@@ -503,10 +503,46 @@ def test_airgus_status(app, monkeypatch):
 
 def test_wbpp_session_dot(app):
     from webapp.main.wbpp_view import session_status
-    leo_a = "2026/M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+    leo_a = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
     with app.app_context():
         st = session_status()
     assert st[leo_a]["status"] == "ok"
     assert any(n.startswith("2 von ") for n in st[leo_a]["notes"])
     page = app.test_client().get("/sessions").data.decode()
     assert ">WBPP</th>" in page and "mit WBPP gestackt, keine Fehler" in page and "#wbpp" in page
+
+
+def test_reorganised_archive_is_taken_over_without_reading(app):
+    """Moving folders (e.g. removing the year level) keeps the rows; only the paths change."""
+    import shutil
+
+    from webapp.models import Camera, Issue, Optic, Rig, RigSessionOverride
+    arc = app.config["ARCHIVE_PATH"]
+    old_root = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+    with app.app_context():
+        ids = {f.path.rsplit("/", 1)[-1]: f.id for f in db.session.query(Frame).filter_by(session_root=old_root)}
+        sid = db.session.query(Session).filter_by(root=old_root).one().id
+        v = db.session.query(Version).one()
+        t = db.session.get(Target, v.target_id)
+        t.cover_path = v.path
+        cam, opt = Camera(name="Cam"), Optic(name="Scope", kind="telescope", focal_mm=750)
+        rig = Rig(name="Rig", camera=cam, optic=opt)
+        db.session.add_all([cam, opt, rig])
+        db.session.flush()
+        db.session.add(RigSessionOverride(session_root=old_root, rig_id=rig.id))
+        db.session.commit()
+        old_cover, tid = v.path, t.id
+    # put the target into a year folder (old layout) - like a reorganisation in the other direction
+    os.makedirs(os.path.join(arc, "2026"))
+    shutil.move(os.path.join(arc, "M65, M66, NGC 3628 (Leo-Triplett)"), os.path.join(arc, "2026"))
+    with app.app_context():
+        run = run_once(app)
+        assert run.phase == "done" and run.files_read == 0      # nothing read again
+        new_root = "2026/" + old_root
+        moved = {f.path.rsplit("/", 1)[-1]: f.id for f in db.session.query(Frame).filter_by(session_root=new_root)}
+        assert moved == ids                                     # same rows, new paths
+        assert db.session.query(Session).filter_by(root=new_root).one().id == sid   # session page keeps its URL
+        assert db.session.get(Target, tid).cover_path == "2026/" + old_cover
+        assert db.session.query(RigSessionOverride).one().session_root == new_root
+        hints = {(i.code, i.message) for i in db.session.query(Issue).filter_by(code="year_folder")}
+        assert any("2026/M65" in m for _, m in hints)           # the year folder is reported

@@ -9,39 +9,30 @@ sondern auf der Seite *Prüfungen* gemeldet (Regelname in Klammern).
 
 ```
 <Archiv>/
-└── <Jahr>/                                    2026
-    └── <Ziel>/                                M97, M108 (Owl, Surfboard)
-        ├── <Session>/                         2026-04-28            ← eine Nacht, ein Rig
-        │   ├── Lights/
-        │   │   ├── *.fit | *.fits | *.xisf | *.raf …
-        │   │   ├── REJECTED/                  aussortierte Lights (zählen nicht)
-        │   │   └── SAD/                       StarAberrationDiagnostics (optional)
-        │   ├── Flats/
-        │   ├── Darks/
-        │   ├── Biases/
-        │   ├── DarkFlats/                     optional
-        │   ├── Logs/                          ASIAIR-Autorun-, PHD2-, NINA-Logs (optional)
-        │   ├── Processing/                    Stacks/Zwischenschritte/Finals nur dieser Nacht (optional)
-        │   └── Finals/                        Ergebnisse nur dieser Nacht, auch FITS/XISF (optional)
-        ├── <Session 2>/                       2026-04-29
-        │   └── …
-        ├── Processing/                        Bearbeitung über alle Sessions des Ziels
-        │   ├── master/                        WBPP-Ausgabe, Zwischenschritte und *final*-Dateien
-        │   └── *.xisf | *.fit | *.tif …       PixInsight-/Siril-Schritte, Zwischenstände
-        └── Finals/                            fertige Bilder (JPG, PNG, TIFF)
+└── <Ziel>/                                M97, M108 (Owl, Surfboard)
+    ├── <Session>/                         2026-04-28            ← eine Nacht, ein Rig
+    │   ├── Lights/
+    │   │   ├── *.fit | *.fits | *.xisf | *.raf …
+    │   │   ├── REJECTED/                  aussortierte Lights (zählen nicht)
+    │   │   └── SAD/                       StarAberrationDiagnostics (optional)
+    │   ├── Flats/
+    │   ├── Darks/
+    │   ├── Biases/
+    │   ├── DarkFlats/                     optional
+    │   ├── Logs/                          ASIAIR-Autorun-, PHD2-, NINA-Logs (optional)
+    │   ├── Processing/                    Stacks/Zwischenschritte/Finals nur dieser Nacht (optional)
+    │   └── Finals/                        Ergebnisse nur dieser Nacht, auch FITS/XISF (optional)
+    ├── <Session 2>/                       2026-04-29
+    │   └── …
+    ├── Processing/                        Bearbeitung über alle Sessions des Ziels
+    │   ├── master/                        WBPP-Ausgabe, Zwischenschritte und *final*-Dateien
+    │   └── *.xisf | *.fit | *.tif …       PixInsight-/Siril-Schritte, Zwischenstände
+    └── Finals/                            fertige Bilder (JPG, PNG, TIFF)
 ```
 
 ## Ebenen
 
-### 1. Jahr – `<Archiv>/2026/`
-
-Vierstellige Jahreszahl. Ohne Jahresordner wird das Ziel trotzdem erkannt
-(Hinweis *Zielordner liegt nicht in einem Jahresordner*). Ein Objekt, das in
-mehreren Jahren aufgenommen wurde, bekommt in jedem Jahr einen eigenen
-Zielordner – PhotonLedger führt sie über die Katalognummer zu **einem Ziel**
-zusammen (z. B. `2025/M42 (Orion Nebula)` und `2026/M42 (Orion Nebula)`).
-
-### 2. Ziel – `<Katalognummer(n)> (<Name>)`
+### 1. Ziel – `<Katalognummer(n)> (<Name>)`
 
 ```
 M 31 (Andromeda Galaxy)
@@ -59,10 +50,16 @@ Mineral Moon                           ← ohne Katalognummer: Name allein
 - Der **Name in Klammern** wird als Beiname angezeigt.
 - Ordner, die eine Katalognummer teilen, sind **dasselbe Ziel**
   (`M66, M65 (Leo-Triplett)` und `M65, M66, NGC 3628 (Leo-Triplett)`).
+- Alle Nächte eines Objekts – auch aus verschiedenen Jahren – liegen als
+  Sessions in **einem** Zielordner direkt unter `<Archiv>/`; das Jahr steht im
+  Session-Ordner (`2025-12-03`, `2026-01-14`).
+- Zielordner in einem Jahresordner (`<Archiv>/2026/<Ziel>/`, alte Struktur)
+  werden weiter erkannt, aber gemeldet (Hinweis *Zielordner liegt in einem
+  Jahresordner*).
 - Ohne Katalognummer gibt es keine Katalogdaten und keine Objekte im Bildfeld
   (Hinweis *keine Katalognummer*; nicht für Mond, Sonne, Meteore).
 
-### 3. Session – `<JJJJ-MM-TT>[ <Zusatz>]`
+### 2. Session – `<JJJJ-MM-TT>[ <Zusatz>]`
 
 **Eine Session = eine Nacht mit einem Rig.** Das Datum ist der **Abend**, an
 dem die Nacht beginnt (Lights nach Mitternacht gehören zum Vortag).
@@ -88,8 +85,8 @@ dem die Nacht beginnt (Lights nach Mitternacht gehören zum Vortag).
 Auch bei nur einer Nacht gehört ein Datumsordner dazwischen:
 
 ```
-2026/M51 (Whirlpool Galaxy)/2026-04-14/Lights/…      ✔ empfohlen
-2026/M51 (Whirlpool Galaxy)/Lights/…                 ⚠ Lights direkt im Zielordner
+M51 (Whirlpool Galaxy)/2026-04-14/Lights/…      ✔ empfohlen
+M51 (Whirlpool Galaxy)/Lights/…                 ⚠ Lights direkt im Zielordner
 ```
 
 Die zweite Form wird gelesen (der Zielordner gilt dann als Session), aber mit
@@ -99,7 +96,7 @@ lassen sich die Nächte nicht mehr trennen.
 #### Mehrere Sessions
 
 ```
-2026/M97, M108 (Owl, Surfboard)/
+M97, M108 (Owl, Surfboard)/
 ├── 2026-04-28/
 │   ├── Lights/ Flats/ Darks/ Biases/ Logs/
 ├── 2026-04-29/
@@ -112,7 +109,7 @@ lassen sich die Nächte nicht mehr trennen.
 #### Mehrere Rigs in derselben Nacht
 
 ```
-2026/IC1396 (Elephant's Trunk Nebula)/
+IC1396 (Elephant's Trunk Nebula)/
 ├── 2026-07-08 DWARF3/       Lights/ Darks/
 ├── 2026-07-08 Skywatcher/   Lights/ Flats/ Darks/ Biases/ logs/
 ├── 2026-07-10 DWARF3/
@@ -122,7 +119,7 @@ lassen sich die Nächte nicht mehr trennen.
 Logs (PHD2, ASIAIR) werden über die Zeit zugeordnet; laufen zwei Sessions
 desselben Ziels gleichzeitig, gehört ein Log der Session, in deren Ordner es liegt.
 
-### 4. Bildordner in der Session
+### 3. Bildordner in der Session
 
 | Ordner | Inhalt | erkannte Schreibweisen |
 |---|---|---|
@@ -147,7 +144,7 @@ desselben Ziels gleichzeitig, gehört ein Log der Session, in deren Ordner es li
   (Hinweis); vorhandene Darks/Bias werden grundsätzlich gemeldet, damit sie
   bei Bedarf in eine zentrale Kalibrier-Bibliothek wandern können.
 
-### 5. `Logs` – Protokolle der Nacht
+### 4. `Logs` – Protokolle der Nacht
 
 `Logs/`, `logs/` oder `log/` in der Session (oder im Zielordner):
 
@@ -157,13 +154,13 @@ desselben Ziels gleichzeitig, gehört ein Log der Session, in deren Ordner es li
 
 Die Zeitstempel sind Ortszeit (Einstellung `TIMEZONE`).
 
-### 6. `Lights/SAD` – StarAberrationDiagnostics
+### 5. `Lights/SAD` – StarAberrationDiagnostics
 
 Der Ordner `SAD/`, den StarAberrationDiagnostics neben die Lights schreibt
 (`StarAberrationSeries.csv/.json`, Karten-PNGs, KI-Bewertung). Nicht umbenennen
 oder verschieben – die Zuordnung läuft über die Dateinamen der Lights.
 
-### 7. `Processing` – Bearbeitung und Zwischenergebnisse
+### 6. `Processing` – Bearbeitung und Zwischenergebnisse
 
 **Alle** Zwischenergebnisse liegen in einem Ordner, der **genau** `Processing`
 heißt – im Zielordner (über alle Sessions) oder in einer Session (nur diese Nacht):
@@ -201,7 +198,7 @@ Processing/
 - PhotonLedger zählt Zwischenergebnisse nicht mit; die Seite *Indexer ›
   Zwischenergebnisse* listet sie gruppiert nach Regel.
 
-### 8. `Finals` – fertige Bilder
+### 7. `Finals` – fertige Bilder
 
 Fertige Bilder als JPG, PNG oder TIFF in `Finals/` im Ziel- oder
 Session-Ordner. Sie erscheinen als **Versionen** des Ziels; das neueste Bild in
@@ -234,7 +231,7 @@ Session-Ordner. Sie erscheinen als **Versionen** des Ziels; das neueste Bild in
 ## Vollständiges Beispiel
 
 ```
-2026/
+<Archiv>/
 ├── M97, M108 (Owl, Surfboard)/
 │   ├── 2026-04-28/
 │   │   ├── Lights/

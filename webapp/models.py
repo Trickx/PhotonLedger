@@ -9,7 +9,7 @@ from webapp import db
 
 
 class Target(db.Model):
-    """An object, possibly spread over several folders (e.g. 2025/M42 and 2026/M42)."""
+    """An object, possibly spread over several folders (e.g. "M42" and "M42 (Orion Nebula)")."""
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(200), unique=True)
     name: Mapped[str] = mapped_column(String(200))

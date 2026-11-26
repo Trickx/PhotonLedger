@@ -10,18 +10,19 @@ Datensätze und die bearbeiteten Versionen.
 Ausführlich mit Beispielen für eine und mehrere Sessions je Objekt: **[docs/ordnerstruktur.md](docs/ordnerstruktur.md)**.
 
 ```
-[<Jahr>/]<Ziel>/[<Session>/]<Lights|Flats|Darks|Biases>/[REJECTED/]<Datei>
+<Ziel>/[<Session>/]<Lights|Flats|Darks|Biases>/[REJECTED/]<Datei>
 ```
 
 | Beispiel | Ergebnis |
 |---|---|
-| `2026/M97, M108 (Surfboard, Owl)/2026-04-28/Lights/…` | Ziel *M 97* (Katalog M 97, M 108), Session *2026-04-28* |
-| `2026/M51 (Whirlpool Galaxy)/Lights/…` | Session = Zielordner (Datum aus `DATE-OBS`) |
+| `M97, M108 (Surfboard, Owl)/2026-04-28/Lights/…` | Ziel *M 97* (Katalog M 97, M 108), Session *2026-04-28* |
+| `M51 (Whirlpool Galaxy)/Lights/…` | Session = Zielordner (Datum aus `DATE-OBS`) |
 | `…/2026-07-08 DWARF3/Lights/…`, `…/NGC7000 (NA Nebula)[Canon]/Lights/…` | je eine Session pro Ordner |
 | `…/2026-05-25-100/*.fit` (ohne Lights-Ordner) | Session, Bildtyp aus `IMAGETYP` |
 | `Lights/REJECTED`, `Flats/Rejected` | aussortiert, zählt nicht zur Belichtung |
 | `Finals/`, `Processing/`, `PI*/`, `master*/`, `DXO/` | JPG/PNG/TIFF = **Versionen**, FITS/XISF = Zwischenstände (ignoriert) |
-| `2025/M42 (…)` und `2026/M42 (…)` | ein Ziel (gemeinsame Katalognummer) |
+| `M42` und `M42 (Orion Nebula)` | ein Ziel (gemeinsame Katalognummer) |
+| `2026/M42 (…)/…` (alte Struktur mit Jahresordner) | wird erkannt, aber als *Zielordner liegt in einem Jahresordner* gemeldet |
 | `M66, M65, NGC (Leo-Triplett)` und `M65, M66, NGC 3628 (Leo-Triplett)` | ein Ziel |
 
 **Zwischenergebnisse** (Stacks, Master, PixInsight-/Siril-Schritte als FITS/XISF)
@@ -41,6 +42,11 @@ registrierte Einzelbilder) zählen nicht als Versionen.
 
 Brennweiten einer Kamera, die weniger als 3 % voneinander abweichen
 (`FOCAL_TOLERANCE`), gelten als dieselbe Optik – z. B. 751,9 … 756 mm → *755 mm*.
+
+**Archiv umstrukturiert?** Werden Ordner verschoben oder umbenannt, erkennt der Indexer die
+Dateien wieder (gleicher Name, gleiche Größe und Änderungszeit, alter Pfad verschwunden) und
+übernimmt ihre Daten, statt sie neu einzulesen. Titelbild und abweichend gewählte Rigs je
+Session wandern mit.
 
 ## Katalog und Bildfeld
 

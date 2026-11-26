@@ -5,13 +5,16 @@ against real folder names.
 
 Expected layout (all parts optional except the target folder):
 
-    [<year>/]<target folder>/[<session folder>/]<frame folder>/[REJECTED/]<file>
+    <target folder>/[<session folder>/]<frame folder>/[REJECTED/]<file>
 
-    2026/M97, M108 (Surfboard, Owl)/2026-04-28/Lights/x.fit
-    2026/M51 (Whirlpool Galaxy)/Lights/x.fit                (no session folder)
-    2026/IC1396 (Elephant's Trunk)/2026-07-08 DWARF3/Lights/x.fits
-    2026/NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]/Lights/x.fit
-    2026/Mineral Moon/2026-05-25-100/x.fit                  (frames without frame folder)
+    M97, M108 (Surfboard, Owl)/2026-04-28/Lights/x.fit
+    M51 (Whirlpool Galaxy)/Lights/x.fit                (no session folder)
+    IC1396 (Elephant's Trunk)/2026-07-08 DWARF3/Lights/x.fits
+    NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]/Lights/x.fit
+    Mineral Moon/2026-05-25-100/x.fit                  (frames without frame folder)
+
+The old layout with a year folder above the target (2026/M51 …/…) is still understood, so a
+leftover year folder does not turn into a target named "2026"; the checks report it.
 """
 from __future__ import annotations
 
@@ -188,7 +191,7 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
         head, parts = parts[:2], parts[1:]
     else:
         head, parts = parts[:1], parts
-    if not parts:                       # file directly in the archive root or a year folder
+    if not parts:                       # file directly in the archive root or a (legacy) year folder
         return None
     target_folder = "/".join(head)
     below = parts[1:]                   # folders between target folder and file
@@ -279,6 +282,12 @@ def night_of(ts: datetime | None, offset_hours: int = 12) -> date | None:
     if ts is None:
         return None
     return (ts - timedelta(hours=offset_hours)).date()
+
+
+def without_year(path: str) -> str:
+    """Path for display: a leading (legacy) year folder is dropped."""
+    first, _, rest = path.partition("/")
+    return rest if rest and _YEAR_RE.match(first) else path
 
 
 def session_label(session_root: str, target_folder: str) -> str:

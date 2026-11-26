@@ -27,7 +27,7 @@ TYPE_ICONS = {
 CHECK_GROUPS = [
     ("struktur", "Struktur", "bi-diagram-3",
      {"no_session_folder", "loose_frames", "session_without_date", "folder_naming", "extra_subfolder",
-      "no_year_folder", "intermediate_location", "mixed_equipment", "multi_night", "folder_date", "type_mismatch",
+      "year_folder", "intermediate_location", "mixed_equipment", "multi_night", "folder_date", "type_mismatch",
       "calibration_only"}),
     ("wbpp", "WBPP", "bi-stack",
      {"wbpp_steps", "wbpp_calibration_masters", "wbpp_other", "wbpp_run_failed", "wbpp_outdated",

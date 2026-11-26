@@ -150,7 +150,7 @@ def derive(cfg: dict) -> None:
         sl = [f for f in fs if f.frame_type == "light" and not f.rejected and not f.duplicate]
         s.duplicates = sum(1 for f in fs if f.frame_type == "light" and f.duplicate)
         src = dup_source.get(root)
-        s.duplicate_of = rules.session_label(src.most_common(1)[0][0], tfolder.split("/")[0]) if src else None
+        s.duplicate_of = rules.without_year(src.most_common(1)[0][0]) if src else None
         nights = sorted({f.night for f in sl if f.night})
         s.nights = [n.isoformat() for n in nights]
         s.date = rules.folder_date(root.rsplit("/", 1)[-1]) or (nights[0] if nights else None)

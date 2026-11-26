@@ -203,7 +203,7 @@ def run(cfg: dict) -> int:
         if root == tfolder and any(f.frame_type == "light" for f in fs):
             add("warning", "no_session_folder",
                 f"Lights liegen direkt im Zielordner „{tfolder}“, ohne Session-Ordner",
-                "Struktur: <Jahr>/<Ziel>/<JJJJ-MM-TT>/Lights – sonst lassen sich Nächte nicht trennen.", session=s)
+                "Struktur: <Ziel>/<JJJJ-MM-TT>/Lights – sonst lassen sich Nächte nicht trennen.", session=s)
         elif root != tfolder and not rules.folder_date(root.rsplit("/", 1)[-1]):
             add("hint", "session_without_date", f"Session-Ordner „{label}“ hat kein Datum im Namen",
                 "Empfohlen: JJJJ-MM-TT, ggf. mit Zusatz („2026-07-08 DWARF3“).", session=s)
@@ -223,9 +223,10 @@ def run(cfg: dict) -> int:
             add("hint", "extra_subfolder", f"„{label}“: {n} Bild(er) im Unterordner „{sub}“",
                 "Unterordner (außer REJECTED) werden mitgezählt – gewollt?", session=s, count=n)
     for folder in sorted({f.target_folder for f in frames if f.frame_type}):
-        if "/" not in folder:
-            add("hint", "no_year_folder", f"Zielordner „{folder}“ liegt nicht in einem Jahresordner",
-                "Struktur: <Jahr>/<Ziel>/…", target_id=_target_of(folder, sessions))
+        if "/" in folder:                # target folder below a year folder (old layout)
+            add("hint", "year_folder", f"Zielordner „{folder}“ liegt in einem Jahresordner",
+                "Struktur: <Archiv>/<Ziel>/… – den Zielordner eine Ebene höher verschieben.",
+                target_id=_target_of(folder, sessions))
 
     # ---------------------------------------------------------------- duplicates
     # the same sub frame (camera, type, DATE-OBS, exposure) in several places

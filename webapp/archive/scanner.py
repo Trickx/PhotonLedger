@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlalchemy import delete, select, update
 
 from webapp import db
-from webapp.models import Frame, IndexRun, Intermediate, Version
+from webapp.models import Frame, IndexRun, Intermediate, RigSessionOverride, Session, Target, Version
 
 from . import nightlog, phd2, rules, sad, wbpp
 from .headers import read_header
@@ -41,6 +41,23 @@ def scan(cfg: dict, run: IndexRun) -> None:
         select(model.id, model.path, model.size, model.mtime))} for k, model in models.items()}
     seen: dict[str, list[int]] = {k: [] for k in models}
     pending = 0
+    # moved files: same name, size and mtime under a new path while the old path is gone
+    # (e.g. after reorganising the archive) - the row is taken over instead of reading the file again
+    signatures: dict[str, dict[tuple, list[str]]] | None = None
+    moved: dict[str, list[tuple[str, str]]] = {k: [] for k in models}
+    moved_roots: dict[str, str] = {}                  # session root before -> after the move
+
+    def find_moved(kind: str, name: str, st) -> str | None:
+        nonlocal signatures
+        if signatures is None:
+            signatures = {k: {} for k in models}
+            for k, rows in known_rows.items():
+                for p, (_, size, mtime) in rows.items():
+                    signatures[k].setdefault((p.rsplit("/", 1)[-1], size, round(mtime, 3)), []).append(p)
+        for old in signatures[kind].get((name, st.st_size, round(st.st_mtime, 3)), []):
+            if old in known_rows[kind] and not (archive / old).exists():
+                return old
+        return None
 
     def flush():
         nonlocal pending
@@ -103,6 +120,14 @@ def scan(cfg: dict, run: IndexRun) -> None:
             if known and known[1] == st.st_size and abs(known[2] - st.st_mtime) < 1e-3:
                 seen[c.kind].append(known[0])
                 continue
+            if not known and (old := find_moved(c.kind, name, st)):
+                row_id = known_rows[c.kind].pop(old)[0]
+                old_root = _move(models[c.kind], row_id, rel, c, run)
+                if old_root and c.session_root:
+                    moved_roots.setdefault(old_root, c.session_root)
+                moved[c.kind].append((old, rel))
+                pending += 1
+                continue
             run.files_read += 1
             if c.kind == "frame":
                 _store_frame(rel, Path(dirpath, name), st, c, run, offset, known)
@@ -120,6 +145,9 @@ def scan(cfg: dict, run: IndexRun) -> None:
         raise RuntimeError("Archiv ist leer oder nicht eingebunden – nichts gelöscht.")
     if "" in failed:
         raise RuntimeError("Archiv-Wurzel nicht lesbar – nichts gelöscht.")
+    if any(moved.values()):
+        _relink(moved, moved_roots)
+        log.info("%d verschobene Dateien übernommen (nicht neu gelesen)", sum(len(v) for v in moved.values()))
     removed = 0
     for model in models.values():
         removed += db.session.execute(delete(model).where(model.seen_run != run.id, *keep(model.path, failed))).rowcount
@@ -144,6 +172,36 @@ def keep(column, failed: set[str]) -> list:
         conds.append(column != f)
         conds.append(~column.startswith(f + "/", autoescape=True))
     return conds
+
+
+def _move(model, row_id, rel, c, run) -> str | None:
+    """Take over the row of a moved file: new path and folder roles, header data stays.
+    Returns the frame's session root before the move."""
+    row = db.session.get(model, row_id)
+    old_root = getattr(row, "session_root", None)
+    row.path, row.seen_run, row.target_folder = rel, run.id, c.target_folder
+    if model is Frame:
+        row.session_root, row.rejected = c.session_root, c.rejected
+        if c.frame_type is not None:
+            row.frame_type = c.frame_type
+    db.session.add(row)
+    return old_root
+
+
+def _relink(moved: dict[str, list[tuple[str, str]]], roots: dict[str, str]) -> None:
+    """Settings that refer to paths follow the moved files: cover image, rig chosen per session."""
+    covers = dict(moved["version"])
+    for t in db.session.scalars(select(Target).where(Target.cover_path.in_(list(covers)))):
+        t.cover_path = covers[t.cover_path]
+    for ov in db.session.scalars(select(RigSessionOverride).where(RigSessionOverride.session_root.in_(list(roots)))):
+        ov.session_root = roots[ov.session_root]
+    # sessions keep their id (links to /session/<id> stay valid); derive matches them by the new root
+    taken = set(db.session.scalars(select(Session.root)))
+    for s in db.session.scalars(select(Session).where(Session.root.in_(list(roots)))):
+        if roots[s.root] not in taken:
+            taken.add(roots[s.root])
+            s.root = roots[s.root]
+    db.session.commit()
 
 
 def _store_intermediate(rel, st, c, run, known):

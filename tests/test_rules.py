@@ -9,39 +9,39 @@ from webapp.archive.headers import normalize
 
 @pytest.mark.parametrize("path, kind, target, root, ftype, rejected", [
     # year / target / date / Lights
-    ("2026/M97, M108 (Surfboard, Owl)/2026-04-28/Lights/Light_0061.fit",
-     "frame", "2026/M97, M108 (Surfboard, Owl)", "2026/M97, M108 (Surfboard, Owl)/2026-04-28", "light", False),
-    ("2026/M97, M108 (Surfboard, Owl)/2026-04-28/Lights/REJECTED/x.fit",
-     "frame", "2026/M97, M108 (Surfboard, Owl)", "2026/M97, M108 (Surfboard, Owl)/2026-04-28", "light", True),
-    ("2026/M97, M108 (Surfboard, Owl)/2026-04-28/Flats/Rejected/x.fit",
-     "frame", "2026/M97, M108 (Surfboard, Owl)", "2026/M97, M108 (Surfboard, Owl)/2026-04-28", "flat", True),
-    ("2026/M97, M108 (Surfboard, Owl)/2026-04-28/Flats/Manual/x.fit",
-     "frame", "2026/M97, M108 (Surfboard, Owl)", "2026/M97, M108 (Surfboard, Owl)/2026-04-28", "flat", False),
+    ("M97, M108 (Surfboard, Owl)/2026-04-28/Lights/Light_0061.fit",
+     "frame", "M97, M108 (Surfboard, Owl)", "M97, M108 (Surfboard, Owl)/2026-04-28", "light", False),
+    ("M97, M108 (Surfboard, Owl)/2026-04-28/Lights/REJECTED/x.fit",
+     "frame", "M97, M108 (Surfboard, Owl)", "M97, M108 (Surfboard, Owl)/2026-04-28", "light", True),
+    ("M97, M108 (Surfboard, Owl)/2026-04-28/Flats/Rejected/x.fit",
+     "frame", "M97, M108 (Surfboard, Owl)", "M97, M108 (Surfboard, Owl)/2026-04-28", "flat", True),
+    ("M97, M108 (Surfboard, Owl)/2026-04-28/Flats/Manual/x.fit",
+     "frame", "M97, M108 (Surfboard, Owl)", "M97, M108 (Surfboard, Owl)/2026-04-28", "flat", False),
     # no session folder
-    ("2026/M51 (Whirlpool Galaxy)/Lights/x.fit",
-     "frame", "2026/M51 (Whirlpool Galaxy)", "2026/M51 (Whirlpool Galaxy)", "light", False),
-    ("2026/M51 (Whirlpool Galaxy)/Biases/x.fit",
-     "frame", "2026/M51 (Whirlpool Galaxy)", "2026/M51 (Whirlpool Galaxy)", "bias", False),
+    ("M51 (Whirlpool Galaxy)/Lights/x.fit",
+     "frame", "M51 (Whirlpool Galaxy)", "M51 (Whirlpool Galaxy)", "light", False),
+    ("M51 (Whirlpool Galaxy)/Biases/x.fit",
+     "frame", "M51 (Whirlpool Galaxy)", "M51 (Whirlpool Galaxy)", "bias", False),
     # session folder with equipment suffix / brackets
-    ("2026/IC1396 (Elephant's Trunk Nebula)/2026-07-08 DWARF3/Lights/a.fits",
-     "frame", "2026/IC1396 (Elephant's Trunk Nebula)", "2026/IC1396 (Elephant's Trunk Nebula)/2026-07-08 DWARF3", "light", False),
-    ("2026/NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]/Darks/d.fit",
-     "frame", "2026/NGC7000 (NA Nebula)", "2026/NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]", "dark", False),
+    ("IC1396 (Elephant's Trunk Nebula)/2026-07-08 DWARF3/Lights/a.fits",
+     "frame", "IC1396 (Elephant's Trunk Nebula)", "IC1396 (Elephant's Trunk Nebula)/2026-07-08 DWARF3", "light", False),
+    ("NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]/Darks/d.fit",
+     "frame", "NGC7000 (NA Nebula)", "NGC7000 (NA Nebula)/NGC7000 (NA Nebula)[Canon]", "dark", False),
     # lower case and singular frame folders
-    ("2026/M42 (Orion Nebula)/2026-02-27/lights/l.fits",
-     "frame", "2026/M42 (Orion Nebula)", "2026/M42 (Orion Nebula)/2026-02-27", "light", False),
-    ("2026/NGC 7380 (Wizard Nebula) SH2-142/2026-10-04/FLAT/f.fits",
-     "frame", "2026/NGC 7380 (Wizard Nebula) SH2-142", "2026/NGC 7380 (Wizard Nebula) SH2-142/2026-10-04", "flat", False),
+    ("M42 (Orion Nebula)/2026-02-27/lights/l.fits",
+     "frame", "M42 (Orion Nebula)", "M42 (Orion Nebula)/2026-02-27", "light", False),
+    ("NGC 7380 (Wizard Nebula) SH2-142/2026-10-04/FLAT/f.fits",
+     "frame", "NGC 7380 (Wizard Nebula) SH2-142", "NGC 7380 (Wizard Nebula) SH2-142/2026-10-04", "flat", False),
     # loose sub frames: type comes from the header
-    ("2026/Mineral Moon/2026-05-25-100/m.fit",
-     "frame", "2026/Mineral Moon", "2026/Mineral Moon/2026-05-25-100", None, False),
-    ("2026/Moon (Standard)/m.fit", "frame", "2026/Moon (Standard)", "2026/Moon (Standard)", None, False),
-    ("2026/Perseiden/DSCF1.RAF", "frame", "2026/Perseiden", "2026/Perseiden", None, False),
+    ("Mineral Moon/2026-05-25-100/m.fit",
+     "frame", "Mineral Moon", "Mineral Moon/2026-05-25-100", None, False),
+    ("Moon (Standard)/m.fit", "frame", "Moon (Standard)", "Moon (Standard)", None, False),
+    ("Perseiden/DSCF1.RAF", "frame", "Perseiden", "Perseiden", None, False),
     # versions
-    ("2026/M51 (Whirlpool Galaxy)/Finals/M51.jpg", "version", "2026/M51 (Whirlpool Galaxy)", None, None, False),
-    ("2026/NGC 7635 (Bubble Nebula)/Processing/master/DXO/b.tif", "version", "2026/NGC 7635 (Bubble Nebula)", None, None, False),
-    ("2026/IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/x.jpg", "version", "2026/IC1396 (Elephant's Trunk Nebula)", None, None, False),
-    ("2025/Blutmond 2025-09-07/b.jpg", "version", "2025/Blutmond 2025-09-07", None, None, False),
+    ("M51 (Whirlpool Galaxy)/Finals/M51.jpg", "version", "M51 (Whirlpool Galaxy)", None, None, False),
+    ("NGC 7635 (Bubble Nebula)/Processing/master/DXO/b.tif", "version", "NGC 7635 (Bubble Nebula)", None, None, False),
+    ("IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/x.jpg", "version", "IC1396 (Elephant's Trunk Nebula)", None, None, False),
+    ("Blutmond 2025-09-07/b.jpg", "version", "Blutmond 2025-09-07", None, None, False),
 ])
 def test_classify(path, kind, target, root, ftype, rejected):
     c = rules.classify(path)
@@ -50,12 +50,12 @@ def test_classify(path, kind, target, root, ftype, rejected):
 
 
 @pytest.mark.parametrize("path, ok", [
-    ("2026/M51 (Whirlpool Galaxy)/Processing/stack.fit", True),
-    ("2026/NGC 6888 (Crescent Nebula)/2026-08-06/Processing/master/x.fits", True),
-    ("2026/M 31 (Andromeda Galaxy)/PI/master/m.xisf", False),
-    ("2026/IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/m.xisf", False),
-    ("2026/M42 (Orion Nebula)/2026-02-27/PixInsight/s.fits", False),
-    ("2026/M42 (Orion Nebula)/processing/s.fit", False),              # wrong case
+    ("M51 (Whirlpool Galaxy)/Processing/stack.fit", True),
+    ("NGC 6888 (Crescent Nebula)/2026-08-06/Processing/master/x.fits", True),
+    ("M 31 (Andromeda Galaxy)/PI/master/m.xisf", False),
+    ("IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/m.xisf", False),
+    ("M42 (Orion Nebula)/2026-02-27/PixInsight/s.fits", False),
+    ("M42 (Orion Nebula)/processing/s.fit", False),              # wrong case
 ])
 def test_intermediates(path, ok):
     c = rules.classify(path)
@@ -80,27 +80,28 @@ def test_intermediates(path, ok):
     ("Processing/stack.fit", None),
 ])
 def test_wbpp_kind(name, kind):
-    path = "2026/M 31 (Andromeda Galaxy)/" + name
+    path = "M 31 (Andromeda Galaxy)/" + name
     assert rules.wbpp_kind(path) == kind
     assert rules.classify(path).kind == "intermediate"
 
 
 @pytest.mark.parametrize("path", [
-    "2026/IC 1805 (Heart & Soul Nebula)/Lights/SAD/p.png",                 # analysis output
-    "2026/IC 1805 (Heart & Soul Nebula)/Processing/master/H.pxiproject/project.data/x",
-    "2026/Solar Eclipse/2026-08-12/Lights/s.jpg",                         # jpg lights: no version
-    "2026/M45 (Pleiades)/PI/logs/l.jpg",
-    "2026/M97, M108 (Surfboard, Owl)/2026-04-28/Processing/Light_Pane 1_180.0s_Bin1_ISO1600_0043.tif",
-    "2026/x.fit",                                                         # directly in year folder
-    "2026/M51 (Whirlpool Galaxy)/Lights/notes.txt",
-    "2026/M51 (Whirlpool Galaxy)/.DS_Store",
+    "IC 1805 (Heart & Soul Nebula)/Lights/SAD/p.png",                 # analysis output
+    "IC 1805 (Heart & Soul Nebula)/Processing/master/H.pxiproject/project.data/x",
+    "Solar Eclipse/2026-08-12/Lights/s.jpg",                         # jpg lights: no version
+    "M45 (Pleiades)/PI/logs/l.jpg",
+    "M97, M108 (Surfboard, Owl)/2026-04-28/Processing/Light_Pane 1_180.0s_Bin1_ISO1600_0043.tif",
+    "x.fit",                                                              # directly in the archive root
+    "2026/x.fit",                                                         # directly in a (legacy) year folder
+    "M51 (Whirlpool Galaxy)/Lights/notes.txt",
+    "M51 (Whirlpool Galaxy)/.DS_Store",
 ])
 def test_ignored(path):
     assert rules.classify(path) is None
 
 
 def test_ignore_dirs_option():
-    p = "2026/NGC 7380 (Wizard Nebula) SH2-142/2026-09-10/Kollimation/k.fit"
+    p = "NGC 7380 (Wizard Nebula) SH2-142/2026-09-10/Kollimation/k.fit"
     assert rules.classify(p) is not None
     assert rules.classify(p, ignore_dirs=["kollimation"]) is None
 
@@ -124,20 +125,20 @@ def test_parse_target(folder, ids, common):
 
 def test_group_folders_merges_same_object():
     folders = {
-        "2026/M66, M65, NGC (Leo-Triplett)": "M66, M65, NGC (Leo-Triplett)",
-        "2026/M65, M66, NGC 3628 (Leo-Triplett)": "M65, M66, NGC 3628 (Leo-Triplett)",
-        "2025/M42 (Orion Nebula)": "M42 (Orion Nebula)",
-        "2026/M42 (Orion Nebula)": "M42 (Orion Nebula)",
-        "2026/Moon/": "Moon",
-        "2026/Moon (Standard)": "Moon (Standard)",
-        "2026/Mineral Moon": "Mineral Moon",
-        "2026/M51 (Whirlpool Galaxy)": "M51 (Whirlpool Galaxy)",
+        "M66, M65, NGC (Leo-Triplett)": "M66, M65, NGC (Leo-Triplett)",
+        "M65, M66, NGC 3628 (Leo-Triplett)": "M65, M66, NGC 3628 (Leo-Triplett)",
+        "M42": "M42",
+        "M42 (Orion Nebula)": "M42 (Orion Nebula)",
+        "Moon/": "Moon",
+        "Moon (Standard)": "Moon (Standard)",
+        "Mineral Moon": "Mineral Moon",
+        "M51 (Whirlpool Galaxy)": "M51 (Whirlpool Galaxy)",
     }
     groups = sorted(sorted(g) for g in rules.group_folders(folders))
-    assert ["2026/M65, M66, NGC 3628 (Leo-Triplett)", "2026/M66, M65, NGC (Leo-Triplett)"] in groups
-    assert ["2025/M42 (Orion Nebula)", "2026/M42 (Orion Nebula)"] in groups
-    assert ["2026/Moon (Standard)", "2026/Moon/"] in groups
-    assert ["2026/Mineral Moon"] in groups
+    assert ["M65, M66, NGC 3628 (Leo-Triplett)", "M66, M65, NGC (Leo-Triplett)"] in groups
+    assert ["M42", "M42 (Orion Nebula)"] in groups
+    assert ["Moon (Standard)", "Moon/"] in groups
+    assert ["Mineral Moon"] in groups
     assert len(groups) == 5
 
 
@@ -193,4 +194,12 @@ def test_normalize_header_variants():
     ("PI/master/bge.xisf", ["not_in_processing", "wbpp_other"]),
 ])
 def test_intermediate_findings(name, findings):
-    assert rules.intermediate_findings("2026/M 31 (Andromeda Galaxy)/" + name) == findings
+    assert rules.intermediate_findings("M 31 (Andromeda Galaxy)/" + name) == findings
+
+
+def test_legacy_year_folder_still_understood():
+    """Old layout <year>/<target>/…: the year folder is not a target of its own."""
+    c = rules.classify("2026/M51 (Whirlpool Galaxy)/2026-04-14/Lights/x.fit")
+    assert (c.target_folder, c.session_root) == ("2026/M51 (Whirlpool Galaxy)", "2026/M51 (Whirlpool Galaxy)/2026-04-14")
+    c = rules.classify("M51 (Whirlpool Galaxy)/2026-04-14/Lights/x.fit")
+    assert (c.target_folder, c.session_root) == ("M51 (Whirlpool Galaxy)", "M51 (Whirlpool Galaxy)/2026-04-14")
