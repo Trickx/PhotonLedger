@@ -167,7 +167,12 @@ docker compose -f docker-compose.prod.yml up -d
 
 Update: `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`
 (oder die Datei als `docker-compose.yml` ablegen, dann entfällt `-f …`).
-`docker-compose.yml` im Repo ist für die Entwicklung: Sie kann zusätzlich lokal bauen. Ist das Paket auf GitHub privat,
+`docker-compose.yml` im Repo ist für die Entwicklung: Sie kann zusätzlich lokal bauen.
+
+`./data` muss vor dem ersten Start existieren und dem Benutzer `PUID:PGID` gehören
+(Werte aus `id -u` / `id -g` des Benutzers auf dem NAS). Fehlt der Ordner, legt Docker ihn als
+root an, und der Container bricht mit „nicht beschreibbar“ ab. Abhilfe:
+`sudo chown -R <PUID>:<PGID> ./data`. Ist das Paket auf GitHub privat,
 einmal anmelden: `docker login ghcr.io -u <github-user>` mit einem Personal Access Token
 (Recht `read:packages`). Lokal bauen statt laden: `docker compose up -d --build`.
 Version und Commit des laufenden Images zeigt die Seite *Indexer*.
