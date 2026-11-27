@@ -83,12 +83,26 @@ def init_app(app) -> None:
     app.register_blueprint(auth)
     app.before_request(_guard)
     app.context_processor(lambda: {"auth_enabled": enabled(), "auth_user": session.get("user") if enabled() else None,
-                                   "may_change": may_change()})
+                                   "may_change": may_change(), "may_download": may_download()})
+
+
+DOWNLOAD_ENDPOINTS = {"main.download_session", "main.download_finals", "main.download_version"}
+
+
+def downloads_public() -> bool:
+    v = current_app.config.get("DOWNLOAD_PUBLIC")
+    return v is True or str(v).lower() in ("1", "true", "yes", "ja")
+
+
+def may_download() -> bool:
+    return not enabled() or logged_in() or (public_read() and downloads_public())
 
 
 def _guard():
     if not enabled() or request.endpoint in OPEN_ENDPOINTS or logged_in():
         return None
+    if request.endpoint in DOWNLOAD_ENDPOINTS and not downloads_public():
+        return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
     if public_read() and request.method in ("GET", "HEAD"):
         return None
     if request.method not in ("GET", "HEAD"):

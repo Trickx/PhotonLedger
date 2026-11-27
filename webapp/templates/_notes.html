@@ -1,0 +1,11 @@
+{% macro notes_card(notes) -%}
+{%- for n in notes %}
+<section class="pl-section">
+    <div class="pl-card pl-notes">
+        <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-journal-text"></i> Notizen</span>
+            <span class="pl-phd-kpi" title="{{ n.path }}">{{ n.path.rsplit('/', 1)[-1] }} · {{ n.mtime|timestamp }}</span></div>
+        <div class="pl-notes-body">{{ render_notes(n.text) }}</div>
+    </div>
+</section>
+{%- endfor %}
+{%- endmacro %}

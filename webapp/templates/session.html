@@ -1,31 +1,128 @@
 {% extends "layout.html" %}
+{% from "_rig.html" import rig_placeholder, rig_specs %}
+{% from "_notes.html" import notes_card with context %}
 {% block title %}{{ t.name if t else '' }} {{ s.label or s.date|de_date }} · Photon Ledger{% endblock %}
+{% macro cal_table(s, cal) %}
+            <table class="pl-spec-table pl-cal-table">
+                <thead><tr><th>Kalibrierung</th><th class="text-end">im Archiv</th>{% if cal %}<th>laut WBPP</th>{% endif %}</tr></thead>
+                <tbody>
+                {% for key, label, n in (('flat', 'Flats', s.flats), ('dark', 'Darks', s.darks), ('bias', 'Bias', s.biases)) %}
+                {% set c = cal[key] if cal else none %}
+                <tr><td>{{ label }}</td><td class="text-end">{{ n or '–' }}</td>
+                    {% if cal %}<td>{% if c %}<i class="bi bi-check-lg text-success"></i> {{ c.master }}
+                        {% if c.frames %}<span class="text-body-secondary">· aus {{ c.frames }} Einzelframes{% if c.folders %} in <code title="{{ c.folders|join(', ') }}">{{ c.folders[0].rstrip('/').split('/')[-3:]|join('/') }}</code>{% endif %}</span>
+                        {% else %}<span class="text-body-secondary">· fertiger Master</span>{% endif %}
+                        {% if c.masters > 1 %}<span class="text-body-secondary">· {{ c.masters }} Master</span>{% endif %}
+                    {% else %}<span class="text-body-secondary">nicht verwendet</span>{% endif %}</td>{% endif %}</tr>
+                {% endfor %}
+                </tbody>
+            </table>
+{% endmacro %}
 {% block content %}
 <div class="pl-page">
     {% if t %}<a class="pl-back" href="{{ url_for('main.target', tid=t.id) }}"><i class="bi bi-arrow-left"></i> {{ t.name }}{% if t.common_name %} · {{ t.common_name }}{% endif %}</a>{% endif %}
     <h1>Session {{ s.date|de_date }}</h1>
-    <p class="pl-lead"><span class="text-body-secondary">Ordner:</span> <code class="pl-path">{{ folder }}</code>{% if s.nights|length > 1 %} · {{ s.nights|length }} Nächte{% endif %}
+    <p class="pl-lead"><span class="text-body-secondary">Ordner:</span> <code class="pl-path">{{ folder }}</code>{% if folder_url %}
+        <a class="btn btn-sm btn-link p-0 ms-2" href="{{ folder_url }}" title="{{ folder_url }}"><i class="bi bi-folder2-open"></i> Im Finder öffnen</a>{% endif %}{% if s.nights|length > 1 %} · {{ s.nights|length }} Nächte{% endif %}
         {% if s.duplicate_of %}<br><span class="text-warning">Kopie von {{ s.duplicate_of }}</span>{% endif %}</p>
 
     <div class="pl-tiles">
         <div class="pl-tile"><b>{{ s.exposure_s|hours }} h</b><span>Belichtung</span></div>
         <div class="pl-tile"><b>{{ s.lights }}</b><span>Lights{% if s.rejected %} · {{ s.rejected }} aussortiert{% endif %}</span></div>
         <div class="pl-tile"><b>{{ s.flats or '–' }} / {{ s.darks or '–' }} / {{ s.biases or '–' }}</b><span>Flats / Darks / Bias</span></div>
-        {% for row in rig_rows %}{% set d = row.d %}
-        <div class="pl-tile"><b>{{ d.focal or '?' }} mm</b><span>{{ d.camera or '?' }}{% if d.scale %} · {{ '%.2f'|format(d.scale)|replace('.', ',') }}″/px{% endif %}
-            {% if row.rig %}<br><i class="bi bi-tools"></i> {{ row.rig.name }}{% endif %}</span></div>
-        {% endfor %}
     </div>
-    {% if all_rigs %}
-    <form class="pl-assign mt-2" method="post" action="{{ url_for('main.session_rig', sid=s.id) }}">
-        <label class="pl-note" for="rig_id">Rig dieser Session:</label>
-        <select id="rig_id" class="form-select form-select-sm w-auto" name="rig_id" onchange="this.form.submit()">
-            {% set cur = rig_rows[0].rig if rig_rows and rig_rows[0].how == 'session' else none %}
-            <option value="">{% if rig_rows and rig_rows[0].rig and rig_rows[0].how != 'session' %}wie Datensatz ({{ rig_rows[0].rig.name }}){% else %}wie Datensatz (kein Rig){% endif %}</option>
-            {% for r in all_rigs %}<option value="{{ r.id }}" {% if cur and cur.id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
-        </select>
-        {% if cur %}<span class="pl-how">abweichend für diese Session festgelegt</span>{% endif %}
-    </form>
+
+    {{ notes_card(notes) }}
+
+    {% if filters %}
+    <section class="pl-section" id="filter">
+        <div class="pl-card">
+        <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-funnel"></i> Filter</span></div>
+        <table class="pl-spec-table">
+            <thead><tr><th>Filter</th><th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="text-end">Flats</th></tr></thead>
+            <tbody>
+            {% for f in filters %}
+            <tr>
+                <td>{{ f.name }}</td>
+                <td class="text-end">{{ f.lights or '–' }}</td>
+                <td class="text-end text-nowrap">{{ f.seconds|duration if f.lights else '–' }}</td>
+                <td class="text-end {% if f.lights and not f.flats %}text-warning{% endif %}"
+                    {% if f.lights and not f.flats %}title="Keine Flats mit diesem Filter in dieser Session"{% endif %}>{{ f.flats or '–' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if rig_rows %}
+    <section class="pl-section" id="rig">
+        {% for row in rig_rows %}{% set d = row.d %}{% set r = row.rig %}
+            <div class="pl-card pl-rig-wide">
+                {% if r and r.photo %}<a class="pl-rig-thumb" href="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" target="_blank" title="Foto in voller Größe">
+                    <img src="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" alt="Foto von {{ r.name }}" loading="lazy"></a>
+                {% else %}<span class="pl-rig-thumb">{{ rig_placeholder() }}</span>{% endif %}
+                <div class="pl-rig-body">
+                {% if r %}
+                <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-tools"></i> Rig · {{ r.name }}</span>{% if r.mount and r.mount.kind == 'smart' %} <span class="badge pl-badge-smart">Smart-Teleskop</span>{% endif %}
+                    <span class="pl-how ms-auto">{{ {'session': 'für diese Session gewählt', 'manual': 'von Hand zugeordnet'}.get(row.how, 'automatisch zugeordnet') }}</span></div>
+                <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}</div>
+                {{ rig_specs(r, drivers=drivers) }}
+                {% else %}
+                <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-tools"></i> Rig · <span class="text-body-secondary">kein Rig</span></span></div>
+                <div class="pl-rig-parts">{{ d.camera or 'Kamera unbekannt' }}{% if d.focal %} · {{ d.focal }} mm{% endif %}
+                    – unter <a href="{{ url_for('main.rigs_page') }}">Rigs</a> anlegen oder hier wählen.</div>
+                {% endif %}
+                {% if all_rigs and may_change and loop.first %}
+                {% set cur = r if row.how == 'session' else none %}
+                <div class="pl-rig-photo-actions">
+                    <form method="post" action="{{ url_for('main.session_rig', sid=s.id) }}">
+                        <label class="btn btn-sm btn-link p-0 pl-rig-change"><i class="bi bi-arrow-left-right"></i> Rig ändern
+                            <select name="rig_id" onchange="this.form.submit()" aria-label="Rig dieser Session">
+                                <option value="" {% if not cur %}selected{% endif %}>automatisch (nach Kamera und Brennweite)</option>
+                                {% for o in all_rigs %}<option value="{{ o.id }}" {% if cur and cur.id == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+                            </select></label>
+                    </form>
+                    {% if cur %}
+                    <form method="post" action="{{ url_for('main.session_rig', sid=s.id) }}">
+                        <input type="hidden" name="rig_id" value="">
+                        <button class="btn btn-sm btn-link p-0">Automatisch zuordnen</button></form>
+                    {% endif %}
+                </div>
+                {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if downloads and may_download %}
+    <section class="pl-section" id="download">
+        <form class="pl-card" method="get" action="{{ url_for('main.download_session', sid=s.id) }}">
+            <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-download"></i> Herunterladen</span>
+                <span class="pl-phd-kpi">ZIP ohne Kompression, Ordnerstruktur wie im Archiv</span></div>
+            <div class="pl-dl-options">
+                {% for d in downloads %}
+                <label><input class="form-check-input pl-dl-check" type="checkbox" name="k" value="{{ d.key }}" data-size="{{ d.size }}" {% if d.default %}checked{% endif %}>
+                    {{ d.label }} <small>{{ d.n }} · {{ d.size|filesize }}</small></label>
+                {% endfor %}
+            </div>
+            <div class="pl-rig-photo-actions">
+                <button class="btn btn-sm btn-link p-0"><i class="bi bi-file-earmark-zip"></i> Als ZIP herunterladen (<span class="pl-dl-total"></span>)</button>
+                {% if folder_url %}<a class="btn btn-sm btn-link p-0" href="{{ folder_url }}"><i class="bi bi-folder2-open"></i> Im Finder öffnen – schneller bei großen Sessions</a>{% endif %}
+            </div>
+        </form>
+        <script>
+        (() => {
+            const form = document.currentScript.previousElementSibling, total = form.querySelector('.pl-dl-total');
+            const fmt = n => n >= 1073741824 ? (n / 1073741824).toFixed(1).replace('.', ',') + ' GB' : Math.round(n / 1048576) + ' MB';
+            const upd = () => { const n = [...form.querySelectorAll('.pl-dl-check:checked')].reduce((a, c) => a + +c.dataset.size, 0);
+                total.textContent = fmt(n); form.querySelector('button').disabled = !n; };
+            form.addEventListener('change', upd); upd();
+        })();
+        </script>
+    </section>
     {% endif %}
 
     {% if night %}{% set na = night.a %}{% set ns = night.st %}
@@ -61,18 +158,23 @@
     </section>
     {% endif %}
 
+    {% macro cal_kpi(cal) %}{% if cal %}<span class="pl-phd-kpi" title="Kalibrierung der Lights laut WBPP-Lauf vom {{ cal.date|de_date('%d.%m.%Y') }}">
+        {% for key, label in (('flat', 'Flat'), ('dark', 'Dark'), ('bias', 'Bias')) %}{{ label }} {% if cal[key] %}<i class="bi bi-check-lg text-success"></i>{% else %}–{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>{% endif %}{% endmacro %}
     {% if wbpp %}{% set ws = wbpp.status or {'status': 'none', 'reasons': [], 'notes': []} %}{% set wbpp_runs = wbpp.runs %}
-    <section class="pl-section">
+    <section class="pl-section" id="calibration">
         <details id="wbpp" class="pl-phd">
             <summary>
-                <span class="pl-phd-title"><i class="bi bi-stack"></i> WBPP-Läufe (PixInsight)</span>
+                <span class="pl-phd-title"><i class="bi bi-stack"></i> WBPP und Kalibrierung (PixInsight)</span>
                 <span class="pl-phd-kpi"><i class="pl-dot pl-dot-{{ ws.status }}"></i>
                     {% if not wbpp.contains_session %}diese Session ist in keinem Lauf{% elif ws.status == 'error' %}{{ ws.reasons|length }} Fehler{% else %}keine Fehler{% endif %}</span>
                 {% if wbpp.contains_session %}<span class="pl-phd-kpi">{{ wbpp_runs[0].session_in_stack }} von {{ wbpp.session_lights }} Lights dieser Session im neuesten Stack</span>{% endif %}
+                {{ cal_kpi(cal) }}
                 <span class="pl-phd-kpi">{{ wbpp_runs|length }} Lauf/Läufe · zuletzt {{ wbpp_runs[0].run.started|de_date('%d.%m.%Y') }}</span>
                 <span class="pl-phd-open">Details anzeigen</span>
             </summary>
             <div class="mt-2">
+                {% if s.lights %}<div class="mb-3">{{ cal_table(s, cal) }}
+                    {% if cal %}<div class="pl-note mt-1">laut WBPP-Lauf vom {{ cal.date|de_date('%d.%m.%Y') }} · {{ cal.lights }} von {{ cal.of }} Lights dieser Session kalibriert</div>{% endif %}</div>{% endif %}
                 {% if not wbpp.contains_session %}<p class="pl-note">Keiner der {{ wbpp.total }} WBPP-Läufe des Ziels enthält Lights dieser Session – gezeigt werden alle Läufe des Ziels.</p>
                 {% elif wbpp.total > wbpp_runs|length %}<p class="pl-note">{{ wbpp_runs|length }} von {{ wbpp.total }} WBPP-Läufen des Ziels enthalten Lights dieser Session.</p>{% endif %}
                 {% for r in ws.reasons %}<div class="text-danger small">{{ r }}</div>{% endfor %}
@@ -81,12 +183,24 @@
         </details>
     </section>
     {% endif %}
+    {% if not wbpp and s.lights %}
+    <section class="pl-section" id="calibration">
+        <div class="pl-card">
+            <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-stack"></i> WBPP und Kalibrierung (PixInsight)</span>
+                <span class="pl-phd-kpi"><i class="pl-dot pl-dot-none"></i> kein WBPP-Lauf für dieses Ziel</span></div>
+            {{ cal_table(s, none) }}
+        </div>
+    </section>
+    {% endif %}
 
     {% if not blocks %}
     <section class="pl-section">
-        <h2>Optik-Diagnose</h2>
-        <p class="text-body-secondary">Für diese Session gibt es keine Auswertung von StarAberrationDiagnostics
-            (Ordner <code>Lights/SAD</code> mit <code>StarAberrationSeries.csv</code>).</p>
+        <div class="pl-card">
+            <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-bullseye"></i> Optik-Diagnose</span>
+                <span class="pl-phd-kpi"><i class="pl-dot pl-dot-none"></i> keine Auswertung</span></div>
+            <div class="pl-note">Ordner <code>Lights/SAD</code> mit <code>StarAberrationSeries.csv</code> fehlt
+                (StarAberrationDiagnostics).</div>
+        </div>
     </section>
     {% endif %}
 

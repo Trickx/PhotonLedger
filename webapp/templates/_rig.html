@@ -1,0 +1,59 @@
+{# One rig entry {rig, how, d}: rig name (components in the tooltip), or "kein Rig" with camera and focal length. #}
+{% macro rig_name(x) -%}
+{%- if x.rig %}<span title="{{ x.rig.camera.name }} · {{ x.rig.optic.name }}{% if x.rig.corrector %} · {{ x.rig.corrector.name }}{% endif %}{% if x.how == 'session' %} (für diese Session gewählt){% elif x.how == 'manual' %} (von Hand zugeordnet){% endif %}">{{ x.rig.name }}</span>
+{%- else %}<span class="text-body-secondary" title="Kein Rig passt zu Kamera und Brennweite – unter Ausrüstung oder auf der Session-Seite zuordnen">kein Rig · {{ x.d.camera or '?' }}{% if x.d.focal %} · {{ x.d.focal }} mm{% endif %}</span>{% endif %}
+{%- endmacro %}
+
+{% macro rig_cell(items) -%}
+{%- for x in items %}<div class="text-nowrap">{{ rig_name(x) }}</div>{% else %}–{% endfor %}
+{%- endmacro %}
+
+{% macro num(v, d=0) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% endif %}{% endmacro %}
+
+{# Optical data of a rig: focal length, focal ratio, image scale, field of view, sampling at the given seeing. #}
+{% macro rig_specs(r, seeing=2.5, drivers=none) -%}
+{%- set lo, hi = r.focal_range %}{% set fr = r.f_ratio_range %}
+{%- set s_lo, s_hi = r.scale_at(hi), r.scale_at(lo) %}
+                <dl class="pl-rig-specs">
+                    <div class="pl-spec"><dt>Brennweite</dt><dd>{{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm</dd></div>
+                    <div class="pl-spec"><dt>Öffnungsverh.</dt><dd>{% if fr %}f/{{ num(fr[0], 1) }}{% if fr[1] != fr[0] %}–{{ num(fr[1], 1) }}{% endif %}{% else %}–{% endif %}</dd></div>
+                    <div class="pl-spec"><dt>Bildmaßstab</dt><dd>{% if s_lo %}{{ num(s_lo, 2) }}{% if s_hi != s_lo %}–{{ num(s_hi, 2) }}{% endif %}″/px{% else %}<span class="text-body-secondary">Pixelgröße fehlt</span>{% endif %}</dd></div>
+                    <div class="pl-spec"><dt>Bildfeld</dt><dd>{% set fv = r.fov_at(lo) %}{% if fv %}{{ num(fv[0]) }}′ × {{ num(fv[1]) }}′{% if hi != lo %}{% set fv2 = r.fov_at(hi) %} … {{ num(fv2[0]) }}′ × {{ num(fv2[1]) }}′{% endif %}{% else %}–{% endif %}</dd></div>
+                    {% if s_lo %}{% set px_fwhm = seeing / s_lo %}
+                    <div class="pl-spec"><dt>Abtastung</dt><dd>{{ num(px_fwhm, 1) }} px/FWHM{% if hi != lo %}–{{ num(seeing / s_hi, 1) }}{% endif %}
+                        <span class="pl-sampling {{ 'under' if px_fwhm < 1.5 else 'over' if px_fwhm > 3.5 else 'good' }}">{{ 'Unterabtastung' if px_fwhm < 1.5 else 'Überabtastung' if px_fwhm > 3.5 else 'gut' }}</span></dd></div>{% endif %}
+                    {% if r.mount %}<div class="pl-spec"><dt>Montierung</dt><dd>{{ r.mount.name }}</dd></div>
+                    {% elif drivers and drivers.get(r.id) %}<div class="pl-spec"><dt>Montierung</dt><dd title="Treiber laut FITS-Header (TELESCOP) – Montierung im Rig eintragen für den Namen">{{ drivers[r.id] }}</dd></div>{% endif %}
+                    {% if r.guide_camera %}<div class="pl-spec"><dt>Guiding</dt><dd>{{ r.guide_camera.name }}</dd></div>{% endif %}
+                </dl>
+{%- endmacro %}
+
+{# Generic rig image (no photo uploaded): inline so that its colours follow the light/dark theme. #}
+{% macro rig_placeholder() -%}
+<svg class="pl-rig-ph" viewBox="0 0 400 300" role="img" aria-label="Rig ohne Foto" preserveAspectRatio="xMidYMid slice">
+  <rect width="400" height="300" class="ph-bg"/>
+  <g class="ph-star">
+    <circle cx="42" cy="38" r="1.6"/><circle cx="96" cy="70" r="1.1"/><circle cx="150" cy="28" r="1.3"/>
+    <circle cx="318" cy="44" r="1.8"/><circle cx="362" cy="96" r="1.1"/><circle cx="270" cy="22" r="1"/>
+    <circle cx="60" cy="122" r="1"/><circle cx="352" cy="160" r="1.3"/>
+  </g>
+  <g class="ph-leg" stroke-width="7" stroke-linecap="round">
+    <line x1="200" y1="196" x2="148" y2="286"/><line x1="200" y1="196" x2="252" y2="286"/><line x1="200" y1="196" x2="200" y2="290"/>
+  </g>
+  <rect x="176" y="186" width="48" height="16" rx="4" class="ph-dark"/>
+  <g transform="rotate(-38 200 164)">
+    <rect x="193" y="150" width="14" height="78" rx="3" class="ph-mid"/>
+    <rect x="182" y="212" width="36" height="22" rx="5" class="ph-light"/>
+  </g>
+  <rect x="180" y="150" width="40" height="36" rx="7" class="ph-mid"/>
+  <circle cx="200" cy="168" r="7" class="ph-dark"/>
+  <g transform="rotate(-24 200 140)">
+    <rect x="92" y="114" width="216" height="52" rx="6" class="ph-tube"/>
+    <rect x="286" y="108" width="44" height="64" rx="5" class="ph-accent"/>
+    <rect x="86" y="120" width="12" height="40" rx="3" class="ph-dark"/>
+    <rect x="150" y="110" width="10" height="60" rx="2" class="ph-dark"/>
+    <rect x="236" y="110" width="10" height="60" rx="2" class="ph-dark"/>
+    <rect x="190" y="94" width="58" height="13" rx="6" class="ph-light"/>
+  </g>
+</svg>
+{%- endmacro %}

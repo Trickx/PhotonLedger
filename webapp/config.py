@@ -38,6 +38,12 @@ class Config:
     ARCHIVE_PATH = config.get("ARCHIVE_PATH", "./archive")
     # several archives: {"<name>": "<path>", …}; stored paths then start with the name (ARCHIVE_PATH is unused)
     ARCHIVES = config.get("ARCHIVES")
+    # how the user's computer reaches the archive, for "Im Finder öffnen" (e.g. smb://mars/Multimedia/Astro);
+    # with several archives ARCHIVE_URLS = {"<name>": "<url>"}
+    ARCHIVE_URL = config.get("ARCHIVE_URL")
+    ARCHIVE_URLS = config.get("ARCHIVE_URLS")
+    # downloads (ZIP of sessions, finals) with a login: false = only after logging in, also in public read mode
+    DOWNLOAD_PUBLIC = config.get("DOWNLOAD_PUBLIC", False)
     DATA_PATH = _data
     # None = <DATA_PATH>/photonledger.db (resolved in create_app, after env overrides)
     SQLALCHEMY_DATABASE_URI = config.get("SQLALCHEMY_DATABASE_URI")
@@ -62,6 +68,7 @@ class Config:
     PHD_SETTLE_FAILED = int(config.get("PHD_SETTLE_FAILED", 3))         # failed settlings per session …
     PHD_SETTLE_RATIO = float(config.get("PHD_SETTLE_RATIO", 0.10))      # … or share of dithers
     PHD_RMS_ERROR = float(config.get("PHD_RMS_ERROR", 5.0))             # arcsec RMS of a longer section
+    MAX_CONTENT_LENGTH = 30 * 1024 * 1024                       # largest upload (rig photos)
     BACKUP_KEEP = int(config.get("BACKUP_KEEP", 14))   # daily database copies in DATA_PATH/backups, 0 = none
     THUMB_SIZE = int(config.get("THUMB_SIZE", 480))
     PREVIEW_SIZE = int(config.get("PREVIEW_SIZE", 2000))

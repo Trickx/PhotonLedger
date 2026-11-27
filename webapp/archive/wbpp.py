@@ -92,7 +92,11 @@ def find_logs(dirpath: str, dirs: list[str], failed: set[str] | None = None, rel
 def parse(lines) -> dict:
     """Parse a WBPP log (iterable of lines) into a summary dict."""
     r: dict = dict(started=None, pi_version=None, wbpp_version=None, duration_s=None, blocks=[], errors=[],
-                   warnings=Counter(), lights_used=[], frames={}, integrations=[])
+                   warnings=Counter(), lights_used=[], frames={}, integrations=[],
+                   calibration=dict(groups=[], masters={}))
+    cal_group = None                                # light calibration group: {exposure, filter, masters, lights}
+    cal_integ = None                                # integration of calibration frames: {kind, frames, folders}
+    pending_master = None                           # "* Writing master X frame:" -> path on the next line
     block = None
     current = None                                  # stem of the file currently measured
     integ = None                                    # current integration: {frames, rejection: {stem: [pct]}}
@@ -133,11 +137,56 @@ def parse(lines) -> dict:
             r["warnings"][t.replace("** Warning:", "").strip()] += 1
         elif t.startswith("*** Error") or t.startswith("!!! Error"):
             r["errors"].append(dict(step="Verarbeitung", message=t.split(":", 1)[-1].strip()))
+        # ---- calibration: masters made from single frames, and which masters calibrated the lights
+        if (bm2 := re.match(r"\* Begin (calibration|integration) of (\w+) frames", t)):
+            kind = bm2.group(2).lower()
+            if bm2.group(1) == "calibration" and kind == "light":
+                cal_group = dict(exposure=None, filter=None, frames=None, masters={}, lights=[])
+                r["calibration"]["groups"].append(cal_group)
+                cal_integ = None
+            elif bm2.group(1) == "integration" and kind in ("dark", "flat", "bias", "darkflat"):
+                cal_integ = dict(kind=kind, frames=0, folders=[])
+                cal_group = None
+            else:
+                cal_group = cal_integ = None
+        # ("Calibration frame n: … ---> …" lines follow after "* End calibration": the group stays current)
+        if cal_group is not None:
+            if (g := _GROUP.search(t)) and cal_group["frames"] is None:
+                cal_group["frames"] = int(g.group(1))
+            elif t.startswith("Filter") and ":" in t and cal_group["filter"] is None:
+                cal_group["filter"] = t.split(":", 1)[1].strip()
+            elif t.startswith("Exposure") and ":" in t and cal_group["exposure"] is None:
+                cal_group["exposure"] = _num_s(t.split(":", 1)[1])
+            elif (mm := re.match(r"^\*?\s*Master (bias|dark|flat): (.+)$", t)):
+                v = mm.group(2).strip()
+                cal_group["masters"][mm.group(1)] = None if v.lower() == "none" else v.replace("\\", "/").rsplit("/", 1)[-1]
+        if cal_integ is not None:
+            if (g := _GROUP.search(t)) and not cal_integ["frames"]:
+                cal_integ["frames"] = int(g.group(1))
+            elif (mm := re.match(r'^\[(true|false), "([^"]+)"', t)) and mm.group(1) == "true":
+                folder = mm.group(2).replace("\\", "/").rsplit("/", 1)[0]
+                if folder not in cal_integ["folders"]:
+                    cal_integ["folders"].append(folder)
+        if pending_master:
+            if t.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", t):
+                name = t.replace("\\", "/").rsplit("/", 1)[-1]
+                r["calibration"]["masters"][name] = dict(cal_integ or dict(kind=pending_master, frames=None, folders=[]))
+            pending_master = None
+        if (mm := re.match(r"^\* Writing master (\w+) frame:", t)):
+            pending_master = mm.group(1).lower()
+        elif t.startswith("Add the master file:"):
+            name = t.split(":", 1)[1].strip().replace("\\", "/").rsplit("/", 1)[-1]
+            r["calibration"]["masters"].setdefault(name, dict(kind=None, frames=None, folders=[], given=True))
         # ---- lights that went in
         if t.startswith("Calibration frame ") and "--->" in t:
             src, dst = (x.strip() for x in t.split(":", 1)[1].split("--->", 1))
             if _is_light_calibration(src, dst):                    # flats are calibrated the same way
                 r["lights_used"].append(stem_of(src))
+                if cal_group is not None:
+                    cal_group["lights"].append(stem_of(src))
+        elif cal_group is not None and t.startswith("* Loading target file:") is False and \
+                (mm := re.match(r"^\* Calibrating file \d+ of \d+: (.+)$", t)):
+            cal_group["lights"].append(stem_of(mm.group(1)))
         # ---- per-frame measurements (first time a calibrated light is loaded: noise + PSF fits)
         if t.startswith("* Loading target file:"):
             path = t.split(":", 1)[1].strip()
@@ -206,7 +255,14 @@ def parse(lines) -> dict:
     r["integrations"] = [dict(frames=i["frames"]) for i in r["integrations"]]
     r["warnings"] = dict(r["warnings"])
     r["lights_used"] = sorted(set(r["lights_used"]))
+    for g in r["calibration"]["groups"]:
+        g["lights"] = sorted(set(g["lights"]))
     return r
+
+
+def _num_s(s: str) -> float | None:
+    m = re.search(r"[\d.]+", s or "")
+    return float(m.group(0)) if m else None
 
 
 def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = None) -> None:
@@ -235,6 +291,7 @@ def sync(cfg: dict, run: IndexRun, paths: list[str], protect: set[str] | None = 
             w.pi_version, w.wbpp_version, w.duration_s = p["pi_version"], p["wbpp_version"], p["duration_s"]
             w.blocks, w.errors, w.warnings = p["blocks"], p["errors"], p["warnings"]
             w.lights_used, w.frames, w.integrations = p["lights_used"], p["frames"], p["integrations"]
+            w.calibration = p["calibration"]
             log.info("WBPP-Log gelesen: %s (%d Lights)", rel, len(p["lights_used"]))
         except Exception as e:  # noqa: BLE001
             w.error = f"{type(e).__name__}: {e}"[:500]

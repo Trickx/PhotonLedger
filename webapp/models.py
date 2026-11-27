@@ -286,6 +286,7 @@ class WbppRun(db.Model):
     lights_used: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")   # stems of the lights
     frames: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")        # stem -> measurements
     integrations: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    calibration: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")   # groups of lights, masters
     error: Mapped[str | None] = mapped_column(Text)
     seen_run: Mapped[int] = mapped_column(default=0, index=True)
 
@@ -297,6 +298,7 @@ class Camera(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     header_name: Mapped[str | None] = mapped_column(String(120))   # INSTRUME in the FITS header, for matching
+    role: Mapped[str] = mapped_column(String(10), default="main", server_default="main")   # main | guide
     pixel_um: Mapped[float | None]
     width_px: Mapped[int | None]
     height_px: Mapped[int | None]
@@ -335,6 +337,15 @@ class Corrector(db.Model):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
+class Mount(db.Model):
+    """Mount of a rig (equatorial, alt-az, star tracker …)."""
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(20), default="eq")        # eq | fork | altaz | tracker | smart
+    payload_kg: Mapped[float | None]
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
 class Rig(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
@@ -343,8 +354,13 @@ class Rig(db.Model):
     optic_id: Mapped[int] = mapped_column(ForeignKey("optic.id"), index=True)
     corrector_id: Mapped[int | None] = mapped_column(ForeignKey("corrector.id"), index=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    photo: Mapped[str | None] = mapped_column(String(200))     # uploaded photo, path below DATA_PATH
+    mount_id: Mapped[int | None] = mapped_column(ForeignKey("mount.id"), index=True)
+    guide_camera_id: Mapped[int | None] = mapped_column(ForeignKey("camera.id"), index=True)   # optional
 
-    camera: Mapped[Camera] = relationship()
+    camera: Mapped[Camera] = relationship(foreign_keys=[camera_id])
+    guide_camera: Mapped[Camera | None] = relationship(foreign_keys=[guide_camera_id])
+    mount: Mapped[Mount | None] = relationship()
     optic: Mapped[Optic] = relationship()
     corrector: Mapped[Corrector | None] = relationship()
 
@@ -423,6 +439,17 @@ class IssueAck(db.Model):
     key: Mapped[str] = mapped_column(String(1100), unique=True)
     message: Mapped[str] = mapped_column(Text)
     created: Mapped[datetime]
+
+
+class Note(db.Model):
+    """A notes file (Notizen.md) in a session or target folder, read on every change."""
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(1000), unique=True)
+    folder: Mapped[str] = mapped_column(String(1000), index=True)      # folder that holds the file
+    size: Mapped[int]
+    mtime: Mapped[float]
+    text: Mapped[str] = mapped_column(Text, default="")
+    seen_run: Mapped[int] = mapped_column(default=0, index=True)
 
 
 class IndexRun(db.Model):

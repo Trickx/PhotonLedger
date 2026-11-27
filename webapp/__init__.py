@@ -44,7 +44,7 @@ def create_app(config_class=Config):
 
     from webapp import models  # noqa: F401  (register models)
     from webapp.main.routes import main
-    from webapp.main import night_view, phd_view, rigs, sad_view  # noqa: F401  (add their routes to the blueprint)
+    from webapp.main import downloads, night_view, phd_view, rigs, sad_view  # noqa: F401  (add their routes to the blueprint)
     from webapp.main.filters import register_filters
 
     app.register_blueprint(main)

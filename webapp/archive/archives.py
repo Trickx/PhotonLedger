@@ -75,6 +75,22 @@ def to_rel(cfg, full) -> str:
     raise ValueError(f"{full} liegt in keinem Archiv")
 
 
+def external_url(cfg, rel: str) -> str | None:
+    """Link to a stored path as the user's computer sees the archive, e.g. smb://mars/Multimedia/Astro/…
+    From ARCHIVE_URL (one archive) or ARCHIVE_URLS {name: url}; None if not configured."""
+    from urllib.parse import quote
+    a, inner_rel = split(cfg, rel)
+    if a is None:
+        return None
+    urls = cfg.get("ARCHIVE_URLS") or {}
+    if isinstance(urls, str) and urls.strip():
+        urls = json.loads(urls)
+    base = urls.get(a.name) if a.name else cfg.get("ARCHIVE_URL")
+    if not base:
+        return None
+    return base.rstrip("/") + ("/" + quote(inner_rel) if inner_rel else "")
+
+
 def inner(cfg, rel: str) -> str:
     """Stored path without the archive name (for rules that look at the folder layout)."""
     return split(cfg, rel)[1]

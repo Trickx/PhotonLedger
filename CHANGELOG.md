@@ -2,6 +2,18 @@
 
 Versionsnummern nach `MAJOR.MINOR.PATCH`; die aktuelle steht in [`VERSION`](VERSION).
 
+## Unveröffentlicht
+
+- Rigs: Foto (oder einheitliches Platzhalterbild), Montierung (Vorgabe: Treiber aus dem Header),
+  Guiding-Kameras mit eigener Liste und Vorschlag aus `GUIDECAM`/PHD2, Smart-Teleskope mit einem Klick,
+  Warnung für Sessions ohne Rig, Rig im Katalog und auf der Session-Seite.
+- Session-Seite: Filter mit Lights und Flats, Karte „WBPP und Kalibrierung“ – welche Master WBPP verwendet
+  hat (auch Kalibrierdaten außerhalb des Archivs); F/D/B und „Lights ohne Flats“ berücksichtigen das.
+- Downloads: Session als ZIP (Auswahl, gestreamt), Finals als ZIP, einzelne Versionen; „Im Finder öffnen“
+  über `ARCHIVE_URL`; mit Login nur nach Anmeldung (`DOWNLOAD_PUBLIC`).
+- Versionen im Vollbild mit Zoom und Blättern; `Notizen.md` in Session- und Zielordnern.
+- Einheitliche Karten auf der Session-Seite; Kachel „Kalibriert“ im Katalog entfernt.
+
 ## 1.0.0 – 2026-11-26
 
 Erste nummerierte Version.

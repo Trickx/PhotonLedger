@@ -318,7 +318,7 @@ def test_wbpp_log(app):
     assert "WBPP-Läufe" not in c.get(f"/target/{leo}").data.decode()        # shown on the session page only
     page = c.get(f"/session/{sid}").data.decode()
     assert '<details id="wbpp" class="pl-phd">' in page                     # collapsed when the page loads
-    assert "WBPP-Läufe" in page and "masterLight erzeugt" in page and "masterDark_BIN-1_EXPOSURE-180.00s.xisf" in page
+    assert "WBPP und Kalibrierung (PixInsight)" in page and "masterLight erzeugt" in page and "masterDark_BIN-1_EXPOSURE-180.00s.xisf" in page
     assert "nicht in diesem Stack" in page and "2,91 %" in page and "2 von 3 Lights dieser Session" in page
 
 
@@ -992,3 +992,156 @@ def test_password_hash_forms(app, monkeypatch):
     c = a.test_client()
     r = c.post("/login", data={"user": "sven", "password": "geheim-123", "next": "/healthz"})
     assert r.status_code == 302 and r.headers["Location"] == "/healthz"
+
+
+def test_session_filters(app):
+    """The session page lists each filter with its usable lights, exposure and flats."""
+    from pathlib import Path
+    from webapp.archive import scanner  # noqa: F401
+    leo = Path(app.config["ARCHIVE_PATH"]) / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22"
+    _fits(leo / "Flats" / "f_ha.fit", IMAGETYP="Flat", EXPTIME=1.0, **{"DATE-OBS": "2026-03-23T05:00:00"},
+          INSTRUME="Canon EOS 1200D", FILTER="Ha")
+    with app.app_context():
+        run_once(app)
+        s = db.session.query(Session).filter_by(root="M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22").one()
+        sid = s.id
+        from webapp.models import Frame
+        lights = db.session.query(Frame).filter_by(session_root=s.root, frame_type="light", rejected=False,
+                                                    duplicate=False).count()
+    page = app.test_client().get(f"/session/{sid}").data.decode()
+    sec = page.split('id="filter"', 1)[1].split("</section>", 1)[0]
+    assert "<td>Ohne Filter</td>" in sec and f'<td class="text-end">{lights}</td>' in sec
+    assert "<td>Ha</td>" in sec                                    # flats of a filter without lights
+
+
+def test_downloads(app):
+    """Session as ZIP (categories, REJECTED only on request), finals of a target, single versions; with a
+    login, downloads need it even in public read mode; Finder link from ARCHIVE_URL."""
+    import io
+    import zipfile
+    c = app.test_client()
+    root = "M65, M66, NGC 3628 (Leo-Triplett)/2026-03-22"
+    with app.app_context():
+        s = db.session.query(Session).filter_by(root=root).one()
+        sid, tid = s.id, s.target_id
+        rejected = {f.path for f in db.session.query(Frame).filter_by(session_root=root, rejected=True)}
+        lights = {f.path for f in db.session.query(Frame).filter_by(session_root=root, frame_type="light", rejected=False)}
+        vid = db.session.query(Version).filter_by(target_id=tid).first().id
+    page = c.get(f"/session/{sid}").data.decode()
+    assert "Als ZIP herunterladen" in page and "Im Finder öffnen" not in page
+    r = c.get(f"/session/{sid}/download.zip")
+    assert r.status_code == 200 and r.mimetype == "application/zip" and "attachment" in r.headers["Content-Disposition"]
+    names = set(zipfile.ZipFile(io.BytesIO(r.data)).namelist())
+    assert lights <= names and not (rejected & names)
+    assert any(n.startswith(root + "/Finals/") for n in names)         # processing / finals of the session
+    r = c.get(f"/session/{sid}/download.zip?k=rejected")
+    assert set(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) == rejected
+    z = zipfile.ZipFile(io.BytesIO(c.get(f"/target/{tid}/finals.zip").data))
+    assert any(n.endswith("leo_session.xisf") for n in z.namelist())   # FITS/XISF from Finals too
+    assert z.testzip() is None
+    r = c.get(f"/version/{vid}/file")
+    assert r.status_code == 200 and "attachment" in r.headers["Content-Disposition"]
+    app.config["ARCHIVE_URL"] = "smb://mars/Multimedia/Astro"
+    assert "smb://mars/Multimedia/Astro/M65%2C%20M66" in c.get(f"/session/{sid}").data.decode()
+    from werkzeug.security import generate_password_hash
+    app.config.update(AUTH_USER="sven", AUTH_PASSWORD_HASH=generate_password_hash("geheim-123"), AUTH_PUBLIC_READ=True)
+    assert c.get(f"/session/{sid}").status_code == 200                  # page visible …
+    assert c.get(f"/session/{sid}/download.zip").status_code == 302      # … download needs the login
+    assert "Als ZIP herunterladen" not in c.get(f"/session/{sid}").data.decode()
+    app.config["DOWNLOAD_PUBLIC"] = True
+    assert c.get(f"/version/{vid}/file").status_code == 200
+
+
+def test_version_viewer(app):
+    """Versions open in the full-screen viewer (preview image, download, cover choice) instead of
+    becoming the cover image on a click."""
+    with app.app_context():
+        v = db.session.query(Version).filter(Version.thumb.is_not(None)).first()
+        tid, vid = v.target_id, v.id
+    page = app.test_client().get(f"/target/{tid}", headers={"HX-Request": "true"}).data.decode()
+    assert f'data-full="/media/previews/{vid}"' in page and 'data-pl-view="versions"' in page
+    assert f'data-cover="/target/{tid}/cover/{vid}"' in page and "hx-post" not in page.split('class="pl-versions"', 1)[1]
+    full = app.test_client().get("/").data.decode()
+    assert 'id="pl-viewer"' in full and "viewer.js" in full
+
+
+def test_notes(app):
+    """Notizen.md in a session or target folder is imported, shown as Markdown (HTML escaped), updated
+    on change and removed with the file."""
+    import os
+    from pathlib import Path
+    arc = Path(app.config["ARCHIVE_PATH"])
+    target = arc / "M65, M66, NGC 3628 (Leo-Triplett)"
+    sess = target / "2026-03-22"
+    (sess / "Notizen.md").write_text("# Nacht\n\n- Seeing **gut**\n- [x] Flats\n\n<script>alert(1)</script>\n"
+                                     "Siehe https://example.org/x", encoding="utf-8")
+    (target / "notes.md").write_text("Ziel-Notiz *kursiv*", encoding="utf-8")
+    with app.app_context():
+        run_once(app)
+        sid = db.session.query(Session).filter_by(root=f"{target.name}/2026-03-22").one().id
+        tid = db.session.get(Session, sid).target_id
+    c = app.test_client()
+    page = c.get(f"/session/{sid}").data.decode()
+    assert "<h3>Nacht</h3>" in page and "<strong>gut</strong>" in page and "bi-check-square" in page
+    assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
+    assert '<a href="https://example.org/x" target="_blank" rel="noopener">' in page
+    detail = c.get(f"/target/{tid}", headers={"HX-Request": "true"}).data.decode()
+    assert "<em>kursiv</em>" in detail and "Notizen vorhanden" in detail
+    (sess / "Notizen.md").write_text("Neu", encoding="utf-8")
+    os.utime(sess / "Notizen.md", (1, 2))
+    with app.app_context():
+        run_once(app)
+    assert "<p>Neu</p>" in c.get(f"/session/{sid}").data.decode()
+    (sess / "Notizen.md").unlink()
+    with app.app_context():
+        run_once(app)
+        from webapp.models import Note
+        assert [n.path for n in db.session.query(Note)] == [f"{target.name}/notes.md"]
+
+
+def test_wbpp_calibration(app):
+    """Calibration frames outside the archive: the WBPP log tells which masters calibrated the lights of a
+    session - shown on the session page and in F/D/B, and "Lights ohne Flats" is no longer reported."""
+    from pathlib import Path
+    arc = Path(app.config["ARCHIVE_PATH"])
+    sess = arc / "M51 (Whirlpool Galaxy)" / "2026-04-01"
+    for i in range(2):
+        _light(sess / "Lights" / f"Light_M51_{i}.fit", f"2026-04-01T22:0{i}:00", ra=202.47, dec=47.2)
+    with app.app_context():
+        run_once(app)
+        root = "M51 (Whirlpool Galaxy)/2026-04-01"
+        assert db.session.query(Issue).filter_by(code="no_flats", session_root=root).count() == 1
+
+    def ln(t):
+        return f"[2026-04-02 10:00:00] {t}"
+    cal = "/Volumes/Ext/Calibration DB/Canon 1200D/180s"
+    master = "/Users/x/M51/Processing/master"
+    log = [
+        "* Begin integration of Dark frames", "Group of 2 Dark frames (2 active)",
+        f'   [true, "{cal}/Dark_1.fit", "", ""],', f'   [true, "{cal}/Dark_2.fit", "", ""]',
+        "* Writing master Dark frame:", f"{master}/masterDark_BIN-1_EXPOSURE-180.00s.xisf",
+        "* End integration of Dark frames",
+        f"Add the master file: {master}/masterFlat_BIN-1_FILTER-NoFilter.xisf",
+        "* Begin calibration of Light frames", "Group of 2 Light frames (2 active)", "Exposure : 180.00s",
+        "Master bias: none", f"* Master dark: {master}/masterDark_BIN-1_EXPOSURE-180.00s.xisf",
+        f"* Master flat: {master}/masterFlat_BIN-1_FILTER-NoFilter.xisf",
+        "* End calibration of Light frames",
+        f"Calibration frame 0: /Users/x/M51/Lights/Light_M51_0.fit ---> {master}/../calibrated/Light_M51_0_c.xisf",
+        f"Calibration frame 1: /Users/x/M51/Lights/Light_M51_1.fit ---> {master}/../calibrated/Light_M51_1_c.xisf",
+        "* Weighted Batch Preprocessing: 01:00.00"]
+    (sess / "Processing" / "logs").mkdir(parents=True)
+    (sess / "Processing" / "logs" / "20260402100000.log").write_text("\n".join(ln(x) for x in log) + "\n")
+    with app.app_context():
+        run_once(app)
+        assert not db.session.query(Issue).filter_by(code="no_flats", session_root=root).count()
+        sid = db.session.query(Session).filter_by(root=root).one().id
+    c = app.test_client()
+    page = c.get(f"/session/{sid}").data.decode()
+    card = page.split('id="calibration"', 1)[1].split("</section>", 1)[0]
+    assert "2 von 2 Lights dieser Session kalibriert" in card and "masterDark_BIN-1_EXPOSURE-180.00s.xisf" in card
+    assert 'Flat <i class="bi bi-check-lg text-success"></i>' in card                 # summary line of the card
+    assert "aus 2 Einzelframes" in card and "Calibration DB/Canon 1200D/180s" in card
+    assert "fertiger Master" in card                                  # the flat was given as a master
+    assert card.count("nicht verwendet") == 1                         # bias
+    overview = c.get("/sessions").data.decode()
+    assert "laut WBPP kalibriert mit masterFlat_BIN-1_FILTER-NoFilter.xisf" in overview

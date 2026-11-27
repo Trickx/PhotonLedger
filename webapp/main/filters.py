@@ -70,8 +70,21 @@ def num(n) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+def filesize(n) -> str:
+    """Bytes as 1,2 GB / 830 MB / 4 KB."""
+    if not n:
+        return "0 B"
+    for unit, f in (("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024)):
+        if n >= f:
+            v = n / f
+            return (f"{v:.1f}" if v < 10 else f"{v:.0f}").replace(".", ",") + " " + unit
+    return f"{n} B"
+
+
 def register_filters(app) -> None:
-    app.jinja_env.filters.update(
+    from webapp.archive.notes import render
+    app.jinja_env.globals["render_notes"] = render
+    app.jinja_env.filters.update(filesize=filesize, 
         hours=hours, duration=duration, exposure=exposure,
         ra=ra_hms, dec=dec_dms, de_date=de_date, num=num, timestamp=timestamp,
     )

@@ -1,0 +1,10 @@
+{# Flats / Darks / Bias of a session: files in the archive, and - where none are there - what WBPP used. #}
+{% macro cal_part(n, c, label) -%}
+{%- if n %}{{ n }}{% elif c %}<span class="pl-cal-wbpp" title="{{ label }}: keine im Archiv, laut WBPP kalibriert mit {{ c.master }}{% if c.frames %} ({{ c.frames }} Einzelframes{% if c.folders %} aus {{ c.folders|join(', ') }}{% endif %}){% endif %}">✓</span>{% else %}–{% endif %}
+{%- endmacro %}
+
+{% macro fdb(s, cal) -%}
+{%- set c = cal.get(s.root) if cal else none -%}
+<td class="text-center text-nowrap {% if s.lights and not s.calibrated and not (c and (c.flat or c.dark)) %}text-warning{% endif %}">
+    {{ cal_part(s.flats, c.flat if c else none, 'Flats') }} / {{ cal_part(s.darks, c.dark if c else none, 'Darks') }} / {{ cal_part(s.biases, c.bias if c else none, 'Bias') }}</td>
+{%- endmacro %}

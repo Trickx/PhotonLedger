@@ -121,6 +121,8 @@ def run(cfg: dict) -> int:
                 session=s, path=group[0].path, count=len(group))
 
     # ---------------------------------------------------------------- per session
+    from webapp.main.wbpp_view import session_calibration
+    wbpp_cal = session_calibration()
     for root, s in sessions.items():
         fs = by_root.get(root, [])
         lights = [f for f in fs if f.frame_type == "light" and not f.rejected and not f.duplicate]
@@ -169,7 +171,8 @@ def run(cfg: dict) -> int:
 
         # flats present? (not needed for Moon, Sun, meteors)
         t = targets.get(s.target_id)
-        if not flats and not (t and t.object_type in NO_CATALOG_TYPES):
+        wbpp_flat = (wbpp_cal.get(root) or {}).get("flat")          # calibrated with a flat outside the archive
+        if not flats and not wbpp_flat and not (t and t.object_type in NO_CATALOG_TYPES):
             add("hint", "no_flats", f"„{label}“: {len(lights)} Lights ohne Flats",
                 "Flats im Session-Ordner ablegen (Ordner „Flats“), falls vorhanden.", session=s)
 
@@ -510,6 +513,9 @@ def run(cfg: dict) -> int:
         if not t.catalog_ids and t.object_type not in NO_CATALOG_TYPES:
             add("hint", "no_catalog_id", f"Ordner „{t.folders[0]}“ enthält keine Katalognummer",
                 "Z. B. „NGC 1234 (Name)“ – dann gibt es Katalogdaten und Objekte im Bildfeld.", target_id=t.id)
+
+    from webapp.main.rigs import rig_issues          # sessions without a rig
+    out += rig_issues(tol)
 
     db.session.add_all(out)
     db.session.commit()

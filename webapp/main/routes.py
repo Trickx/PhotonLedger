@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from webapp import db
 from webapp.archive.rules import catalog_sort_key
-from webapp.models import Frame, IndexRun, Intermediate, Issue, IssueAck, Session, Target, Version
+from webapp.models import Frame, IndexRun, Intermediate, Issue, IssueAck, Note, Session, Target, Version
 
 main = Blueprint("main", __name__)
 
@@ -40,6 +40,7 @@ CHECK_GROUPS = [
     ("dateien", "Dateien & Header", "bi-file-earmark-x", {"unreadable", "missing_header", "wrong_extension"}),
     ("optik", "Optik (SAD)", "bi-bullseye",
      {"sad_tilt", "sad_edge", "sad_tracking", "sad_outliers", "sad_frame_errors", "sad_missing", "sad_unreadable"}),
+    ("rigs", "Rigs", "bi-tools", {"no_rig"}),
     ("ziele", "Ziele", "bi-flag", {"pointing", "foreign_lights", "no_version", "no_catalog_id", "many_rejected"}),
 ]
 SEVERITY = {"error": ("Fehler", "bi-x-octagon-fill", "danger"),
@@ -98,14 +99,32 @@ def _sort_key_name(t: Target):
     return catalog_sort_key(t.name) if t.catalog_ids else (999, 0, t.name.lower())
 
 
-def _datasets(sessions: list[Session]) -> list[dict]:
+def session_rigs(sessions, res) -> dict[int, list[dict]]:
+    """Session id -> [{rig, how, d}] per data set (camera x focal length), one entry per rig."""
+    rigs = {}
+    for s in sessions:
+        seen, out = set(), []
+        for d in s.datasets or []:
+            rig, how = res.resolve(s.root, d["camera"], d["focal"])
+            key = rig.id if rig else (d["camera"], d["focal"])
+            if key not in seen:
+                seen.add(key)
+                out.append(dict(rig=rig, how=how, d=d))
+        rigs[s.id] = out
+    return rigs
+
+
+def _datasets(sessions: list[Session], res=None) -> list[dict]:
     agg: dict[tuple, dict] = {}
     for s in sessions:
         for d in s.datasets or []:
             k = (d["camera"], d["focal"], d["telescope"])
             a = agg.setdefault(k, dict(camera=d["camera"], focal=d["focal"], telescope=d["telescope"],
                                        seconds=0.0, lights=0, sessions=set(), first=None, last=None,
-                                       scale=None, fov_w=None, fov_h=None))
+                                       scale=None, fov_w=None, fov_h=None, rigs={}))
+            if res is not None:                # rigs of this data set (a session may have chosen another)
+                rig, how = res.resolve(s.root, d["camera"], d["focal"])
+                a["rigs"].setdefault(rig.id if rig else None, dict(rig=rig, how=how, d=d))
             if d.get("scale") and not a["scale"]:
                 a["scale"], a["fov_w"], a["fov_h"] = d["scale"], d["fov_w"], d["fov_h"]
             a["seconds"] += d["seconds"]
@@ -117,6 +136,7 @@ def _datasets(sessions: list[Session]) -> list[dict]:
     out = sorted(agg.values(), key=lambda a: -a["seconds"])
     for a in out:
         a["sessions"] = len(a["sessions"])
+        a["rigs"] = sorted(a["rigs"].values(), key=lambda x: x["rig"] is None)
     return out
 
 
@@ -184,23 +204,33 @@ def _cover(t: Target) -> Version | None:
     return max(finals or vs, key=lambda v: v.mtime)
 
 
+def _session_calibration() -> dict:
+    from webapp.main.wbpp_view import session_calibration
+    return session_calibration()
+
+
 def _detail(t: Target) -> dict:
     sessions = sorted(t.sessions, key=lambda s: (s.date is None, s.date))
     filt: dict[str, float] = defaultdict(float)
     for s in sessions:
         for k, v in (s.filters or {}).items():
             filt[k] += v
-    datasets = _datasets(sessions)
+    from webapp.main.rigs import Resolver
+    res = Resolver(current_app.config["FOCAL_TOLERANCE"])
+    datasets = _datasets(sessions, res)
     with_lights = [s for s in sessions if s.lights]
     frames_total = sum(s.lights + s.flats + s.darks + s.biases + s.darkflats for s in sessions)
     versions = sorted([v for v in t.versions if v.thumb], key=lambda v: -v.mtime)
     broken = [v for v in t.versions if v.error]
     from webapp.main.phd_view import guiding_status
     return dict(
-        sad=sad_overview(), phd=guiding_status(), night=_night_status(),
-        t=t, sessions=sessions, datasets=datasets, cover=_cover(t), versions=versions, broken=broken,
+        sad=sad_overview(), phd=guiding_status(), night=_night_status(), cal=_session_calibration(),
+        notes=db.session.scalars(select(Note).where(Note.folder.in_([f for f in t.folders or []
+                                                                    if f not in {s.root for s in sessions}]))).all(),
+        noted=set(db.session.scalars(select(Note.folder).where(Note.folder.in_([s.root for s in sessions])))),
+        t=t, sessions=sessions, datasets=datasets, rigs=session_rigs(sessions, res), cover=_cover(t), versions=versions, broken=broken,
         filters=sorted(filt.items(), key=lambda kv: -kv[1]), filter_max=max(filt.values(), default=0),
-        n_sessions=len(with_lights), n_calibrated=sum(1 for s in with_lights if s.calibrated),
+        n_sessions=len(with_lights),
         rejected=sum(s.rejected for s in sessions), frames_total=frames_total,
     )
 
@@ -435,21 +465,11 @@ def sessions():
     from webapp.main.phd_view import guiding_status
     from webapp.main.night_view import night_status
     from webapp.main.rigs import Resolver
-    from webapp.main.wbpp_view import session_status
-    res = Resolver(current_app.config["FOCAL_TOLERANCE"])
-    rigs = {}
-    for s in rows:                       # rig per data set (camera x focal length) of the session
-        seen, out = set(), []
-        for d in s.datasets or []:
-            rig, how = res.resolve(s.root, d["camera"], d["focal"])
-            key = rig.id if rig else (d["camera"], d["focal"])
-            if key not in seen:
-                seen.add(key)
-                out.append(dict(rig=rig, how=how, d=d))
-        rigs[s.id] = out
+    from webapp.main.wbpp_view import session_calibration, session_status
+    rigs = session_rigs(rows, Resolver(current_app.config["FOCAL_TOLERANCE"]))
     from webapp.main.sad_view import sad_status
     return render_template("sessions.html", sessions=rows, sad=sad_status(sad_overview()), phd=guiding_status(),
-                           night=night_status(), wbpp=session_status(), rigs=rigs)
+                           night=night_status(), wbpp=session_status(), rigs=rigs, cal=session_calibration())
 
 
 @main.route("/equipment")

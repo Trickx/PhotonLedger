@@ -48,6 +48,11 @@ Dateien wieder (gleicher Name, gleiche Größe und Änderungszeit, alter Pfad ve
 übernimmt ihre Daten, statt sie neu einzulesen. Titelbild und abweichend gewählte Rigs je
 Session wandern mit.
 
+**Notizen.** Eine Datei `Notizen.md` (oder `notes.md`) im Session- oder Zielordner wird beim
+Indexlauf gelesen und auf der Session-Seite bzw. im Katalog angezeigt – als Markdown: Überschriften,
+Listen, Aufgaben (`- [x]`), **fett**, *kursiv*, Links, Zitate und Code. HTML in der Datei wird als Text
+gezeigt. Sessions mit Notizen tragen im Katalog ein kleines Notiz-Symbol.
+
 **Prüfungen quittieren.** Gewollte Meldungen (z. B. Darks im Session-Ordner) lassen sich auf der
 Seite *Prüfungen* mit **quittieren** ausblenden; sie zählen dann auch nicht mehr im Zähler der
 Navigation. Ändert sich ihr Text – etwa weil neue Dateien dazukommen –, erscheinen sie wieder.
@@ -128,7 +133,11 @@ negativen Pixelwerten nach der Kalibrierung.
 Unter *Ausrüstung › Rigs verwalten* werden Komponenten angelegt – Kameras
 (auch direkt aus den FITS-Headern mit Pixel- und Bildgröße), Optiken
 (Teleskop, Festbrennweite, Zoomobjektiv mit Brennweitenbereich) und
-Flattener/Reducer/Extender (Faktor) – und zu Rigs kombiniert. Daraus ergeben
+Flattener/Reducer/Extender (Faktor), Montierungen (Art, Traglast) – und zu Rigs kombiniert;
+optional mit Guiding-Kamera (aus der Kameraliste). **Smart-Teleskope** (DWARF 3, DWARF II, Seestar S50/S30,
+Vespera, Vespera II, Stellina) lassen sich mit einem Klick als Rig anlegen – Kamera, Optik und
+integrierte Montierung entstehen zusammen; findet Photon Ledger ein solches Gerät in den FITS-Headern,
+schlägt die Seite *Rigs* das von selbst vor. Daraus ergeben
 sich effektive Brennweite, Öffnungsverhältnis, Bildmaßstab, Bildfeld und die
 Abtastung bei gewähltem Seeing.
 
@@ -139,6 +148,14 @@ abweichend für einzelne Sessions. *Ausrüstung* zeigt pro Rig Stunden, Ziele,
 Sessions, Lights, Zeitraum, Stunden pro Jahr, Filter und die mittlere FWHM aus
 StarAberrationDiagnostics. Rigs und Zuordnungen liegen in der Datenbank und
 bleiben bei jedem Indexlauf erhalten.
+
+Jedes Rig kann ein **Foto** bekommen (*Foto hochladen* auf der Rig-Karte; JPG, PNG oder WebP bis
+30 MB). Es wird gedreht wie aufgenommen, auf 1600 px verkleinert und als JPEG in `data/rigs/`
+gespeichert – nicht in der Datenbank, also bei einer Sicherung den ganzen `data`-Ordner mitnehmen.
+
+Kann einer Session kein Rig zugeordnet werden (keins oder mehrere passen), meldet *Prüfungen ›
+Rigs* das je Session; die Meldung verschwindet, sobald ein Rig angelegt oder zugeordnet ist.
+Solange gar kein Rig angelegt ist, gibt es diese Meldung nicht.
 
 ## StarAberrationDiagnostics
 

@@ -1,19 +1,44 @@
 """Rigs: components (camera, optic, corrector), rigs, assignment to data sets, statistics."""
 from __future__ import annotations
 
+import re
+import secrets
 import statistics
 from collections import defaultdict
+from pathlib import Path
 
-from flask import abort, current_app, flash, redirect, render_template, request, url_for
-from sqlalchemy import func, select
+from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from sqlalchemy import delete, func, select
 
 from webapp import db
-from webapp.models import Camera, Corrector, Frame, Optic, Rig, RigMatch, RigSessionOverride, SadSeries, Session
+from webapp.archive import archives
+from webapp.models import (Camera, Corrector, Frame, Issue, Mount, Optic, Rig, RigMatch, RigSessionOverride, SadSeries,
+                           Session)
 
 from .routes import main
 
 OPTIC_KINDS = {"telescope": "Teleskop", "prime": "Festbrennweite", "zoom": "Zoomobjektiv"}
 CORRECTOR_KINDS = {"flattener": "Flattener / Komakorrektor", "reducer": "Reducer", "extender": "Extender / Barlow"}
+# smart telescopes: camera, optic and mount in one device (header name = INSTRUME of its files)
+SMART_PRESETS = {
+    "dwarf3": dict(name="DWARF 3", header="DWARF 3", pixel_um=2.0, width_px=3856, height_px=2180,
+                   focal_mm=150, aperture_mm=35),
+    "dwarf2": dict(name="DWARF II", header="DWARF II", pixel_um=1.45, width_px=3840, height_px=2160,
+                   focal_mm=100, aperture_mm=24),
+    "seestar_s50": dict(name="Seestar S50", header="Seestar S50", pixel_um=2.9, width_px=1920, height_px=1080,
+                        focal_mm=250, aperture_mm=50),
+    "seestar_s30": dict(name="Seestar S30", header="Seestar S30", pixel_um=2.9, width_px=1920, height_px=1080,
+                        focal_mm=150, aperture_mm=30),
+    "vespera": dict(name="Vaonis Vespera", header="Vespera", pixel_um=2.9, width_px=1920, height_px=1080,
+                    focal_mm=200, aperture_mm=50),
+    "vespera2": dict(name="Vaonis Vespera II", header="Vespera II", pixel_um=2.9, width_px=3840, height_px=2160,
+                     focal_mm=250, aperture_mm=50),
+    "stellina": dict(name="Vaonis Stellina", header="Stellina", pixel_um=2.4, width_px=3072, height_px=2048,
+                     focal_mm=400, aperture_mm=80),
+}
+
+MOUNT_KINDS = {"eq": "Parallaktisch (deutsch)", "fork": "Gabel / parallaktisch", "altaz": "Azimutal",
+               "tracker": "Star Tracker", "smart": "Smart-Teleskop (integriert)"}
 
 
 def _norm(s: str | None) -> str:
@@ -59,6 +84,85 @@ class Resolver:
 
     def suggestions(self, camera, focal):
         return candidates(self.rigs, camera, focal, self.tol)
+
+
+def rig_issues(tol: float) -> list[Issue]:
+    """One warning per session whose data sets no rig covers (none or several fitting rigs).
+    Nothing while no rig is defined at all (rigs not in use)."""
+    res = Resolver(tol)
+    if not res.rigs:
+        return []
+    out = []
+    for s in db.session.scalars(select(Session).where(Session.lights > 0).order_by(Session.root)):
+        missing = []
+        for d in s.datasets or []:
+            rig, how = res.resolve(s.root, d["camera"], d["focal"])
+            if rig:
+                continue
+            what = f"{d['camera'] or 'Kamera unbekannt'}" + (f" {d['focal']} mm" if d["focal"] else ", Brennweite unbekannt")
+            if how == "ambiguous":
+                what += " (passen mehrere: " + ", ".join(r.name for r in res.suggestions(d["camera"], d["focal"])) + ")"
+            missing.append(what)
+        if missing:
+            out.append(Issue(
+                severity="warning", code="no_rig", session_root=s.root, target_id=s.target_id, count=len(missing),
+                message=f"„{s.root}“: kein Rig für " + "; ".join(missing),
+                hint="Unter „Rigs“ ein passendes Rig anlegen oder die Kamera/Brennweite einem Rig zuordnen; "
+                     "für eine einzelne Nacht das Rig auf der Session-Seite wählen."))
+    return out
+
+
+def guide_suggestions(res: Resolver) -> dict[int, dict]:
+    """Rig id -> guide camera named in the headers (GUIDECAM, written by ASIAIR) of the lights taken with
+    that rig, for rigs without a guide camera: {name, lights, scale (arcsec/px from PHD2, if logged)}."""
+    from collections import Counter
+    from webapp.models import PhdSection
+    guide = func.json_extract(Frame.header, "$.GUIDECAM")
+    rows = db.session.execute(
+        select(Frame.session_root, Frame.camera, Frame.focal_group, guide, func.count())
+        .where(Frame.frame_type == "light", Frame.rejected.is_(False), guide.is_not(None), guide != "")
+        .group_by(Frame.session_root, Frame.camera, Frame.focal_group, guide)).all()
+    per_rig: dict[int, Counter] = defaultdict(Counter)
+    for root, cam, focal, name, n in rows:
+        rig, _ = res.resolve(root, cam, focal)
+        if rig and not rig.guide_camera_id:
+            per_rig[rig.id][str(name).strip()] += n
+    scales = dict(db.session.execute(select(PhdSection.camera, func.avg(PhdSection.pixel_scale))
+                                     .where(PhdSection.camera.is_not(None)).group_by(PhdSection.camera)).all())
+    out = {}
+    for rid, c in per_rig.items():
+        name, n = c.most_common(1)[0]
+        out[rid] = dict(name=name, lights=n, scale=scales.get(name))
+    return out
+
+
+def mount_drivers(res: Resolver) -> dict[int, str]:
+    """Rig id -> mount driver named in the headers of its lights, for rigs without a mount. ASIAIR writes the
+    mount driver (e.g. "EQMod Mount") as TELESCOP; other programs put the lens or telescope there, so only
+    ASIAIR files and values that name a mount are used."""
+    from collections import Counter
+    tel = func.json_extract(Frame.header, "$.TELESCOP")
+    creator = func.json_extract(Frame.header, "$.CREATOR")
+    rows = db.session.execute(
+        select(Frame.session_root, Frame.camera, Frame.focal_group, tel, creator, func.count())
+        .where(Frame.frame_type == "light", tel.is_not(None), tel != "")
+        .group_by(Frame.session_root, Frame.camera, Frame.focal_group, tel, creator)).all()
+    per_rig: dict[int, Counter] = defaultdict(Counter)
+    for root, cam, focal, name, prog, n in rows:
+        name = str(name).strip()
+        if "asiair" not in str(prog or "").lower() and "mount" not in name.lower():
+            continue
+        rig, _ = res.resolve(root, cam, focal)
+        if rig and not rig.mount_id:
+            per_rig[rig.id][name] += n
+    return {rid: c.most_common(1)[0][0] for rid, c in per_rig.items()}
+
+
+def refresh_rig_issues(tol: float) -> None:
+    """Recompute the rig warnings right after a change on the rigs or session page (not only at the next run)."""
+    db.session.execute(delete(Issue).where(Issue.code == "no_rig"))
+    db.session.add_all(rig_issues(tol))
+    db.session.commit()
 
 
 def rig_statistics(tol: float) -> tuple[list[dict], list[dict]]:
@@ -117,21 +221,32 @@ def rig_statistics(tol: float) -> tuple[list[dict], list[dict]]:
 
 @main.route("/rigs")
 def rigs_page():
-    edit = {k: request.args.get(k, type=int) for k in ("camera", "optic", "corrector", "rig")}
-    cams = db.session.scalars(select(Camera).order_by(Camera.name)).all()
+    edit = {k: request.args.get(k, type=int) for k in ("camera", "optic", "corrector", "mount", "rig")}
+    all_cams = db.session.scalars(select(Camera).order_by(Camera.name)).all()
+    cams = [c for c in all_cams if c.role != "guide"]
+    guide_cams = [c for c in all_cams if c.role == "guide"]
     optics = db.session.scalars(select(Optic).order_by(Optic.focal_mm)).all()
     corrs = db.session.scalars(select(Corrector).order_by(Corrector.name)).all()
+    mounts = db.session.scalars(select(Mount).order_by(Mount.name)).all()
     rigs = db.session.scalars(select(Rig).order_by(Rig.active.desc(), Rig.name)).all()
     header_cams = _header_cameras()
-    known = {_norm(c.header_name) for c in cams} | {_norm(c.name) for c in cams}
+    res_ = Resolver(current_app.config["FOCAL_TOLERANCE"])
+    guides = guide_suggestions(res_)
+    drivers = mount_drivers(res_)
+    header_guides = _header_guide_cameras()
+    known = {_norm(c.header_name) for c in all_cams} | {_norm(c.name) for c in all_cams}
     return render_template(
-        "rigs.html", cameras=cams, optics=optics, correctors=corrs, rigs=rigs, edit=edit,
+        "rigs.html", cameras=cams, guide_cameras=guide_cams, optics=optics, correctors=corrs, mounts=mounts, rigs=rigs, edit=edit,
         cur=dict(camera=db.session.get(Camera, edit["camera"]) if edit["camera"] else None,
                  optic=db.session.get(Optic, edit["optic"]) if edit["optic"] else None,
                  corrector=db.session.get(Corrector, edit["corrector"]) if edit["corrector"] else None,
+                 mount=db.session.get(Mount, edit["mount"]) if edit["mount"] else None,
                  rig=db.session.get(Rig, edit["rig"]) if edit["rig"] else None),
         new_header_cams=[h for h in header_cams if _norm(h["name"]) not in known],
-        optic_kinds=OPTIC_KINDS, corrector_kinds=CORRECTOR_KINDS, seeing=float(request.args.get("seeing", 2.5)))
+        new_header_guides=[h for h in header_guides if _norm(h["name"]) not in known],
+        fill_guides=[c for c in guide_cams if not c.pixel_um and _norm(c.header_name or c.name) in
+                     {_norm(h["name"]) for h in header_guides if h["pixel_um"]}],
+        guides=guides, drivers=drivers, smart_presets=SMART_PRESETS, smart_found=smart_candidates(rigs), optic_kinds=OPTIC_KINDS, corrector_kinds=CORRECTOR_KINDS, mount_kinds=MOUNT_KINDS, seeing=float(request.args.get("seeing", 2.5)))
 
 
 def _header_cameras() -> list[dict]:
@@ -172,10 +287,63 @@ def save_camera():
     c.header_name = (request.form.get("header_name") or "").strip() or None
     c.pixel_um, c.width_px, c.height_px = _f("pixel_um"), _i("width_px"), _i("height_px")
     c.notes = request.form.get("notes") or None
+    c.role = "guide" if request.form.get("role") == "guide" else "main"
     db.session.add(c)
     db.session.commit()
-    flash(f"Kamera „{c.name}“ gespeichert.", "success")
-    return redirect(url_for("main.rigs_page") + "#cameras")
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
+    flash(f"{'Guiding-Kamera' if c.role == 'guide' else 'Kamera'} „{c.name}“ gespeichert.", "success")
+    return redirect(url_for("main.rigs_page") + ("#guide-cameras" if c.role == "guide" else "#cameras"))
+
+
+_PHD_PIXEL = re.compile(r"pixel size = ([\d.]+) um")
+_PHD_SIZE = re.compile(r"full size = (\d+) x (\d+)")
+
+
+def _header_guide_cameras() -> list[dict]:
+    """Guide cameras named in the lights (GUIDECAM) or in PHD2 logs, with pixel and image size from a
+    PHD2 log of that camera if there is one."""
+    from webapp.models import PhdLog, PhdSection
+    guide = func.json_extract(Frame.header, "$.GUIDECAM")
+    found: dict[str, dict] = {}
+    for name, n in db.session.execute(select(guide, func.count()).where(Frame.frame_type == "light", guide.is_not(None),
+                                                                        guide != "").group_by(guide)):
+        found.setdefault(_norm(name), dict(name=str(name).strip(), lights=0, pixel_um=None, width_px=None, height_px=None))
+        found[_norm(name)]["lights"] += n
+    for cam, path in db.session.execute(select(PhdSection.camera, PhdLog.path).join(PhdLog, PhdSection.log_id == PhdLog.id)
+                                        .where(PhdSection.camera.is_not(None))):
+        h = found.setdefault(_norm(cam), dict(name=cam.strip(), lights=0, pixel_um=None, width_px=None, height_px=None))
+        if h["pixel_um"] is None:
+            full = archives.resolve(current_app.config, path)
+            try:
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    head = fh.read(20000)
+            except (OSError, TypeError):
+                continue
+            if m := _PHD_PIXEL.search(head):
+                h["pixel_um"] = float(m.group(1))
+            if m := _PHD_SIZE.search(head):
+                h["width_px"], h["height_px"] = int(m.group(1)), int(m.group(2))
+    return sorted(found.values(), key=lambda h: -h["lights"])
+
+
+@main.post("/rigs/guide-cameras-from-headers")
+def import_guide_cameras():
+    n = 0
+    cams = db.session.scalars(select(Camera)).all()
+    by_name = {_norm(c.header_name): c for c in cams if c.header_name} | {_norm(c.name): c for c in cams}
+    for h in _header_guide_cameras():
+        known = by_name.get(_norm(h["name"]))
+        if known:                       # fill in what is missing from the PHD2 log
+            if known.role == "guide" and not known.pixel_um and h["pixel_um"]:
+                known.pixel_um, known.width_px, known.height_px = h["pixel_um"], h["width_px"], h["height_px"]
+                n += 1
+            continue
+        db.session.add(Camera(name=h["name"], header_name=h["name"], pixel_um=h["pixel_um"], role="guide",
+                              width_px=h["width_px"], height_px=h["height_px"]))
+        n += 1
+    db.session.commit()
+    flash(f"{n} Guiding-Kamera(s) aus Headern und PHD2-Logs übernommen bzw. ergänzt.", "success")
+    return redirect(url_for("main.rigs_page") + "#guide-cameras")
 
 
 @main.post("/rigs/cameras-from-headers")
@@ -188,6 +356,7 @@ def import_cameras():
                               width_px=h["width_px"], height_px=h["height_px"]))
         n += 1
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"{n} Kamera(s) aus den FITS-Headern übernommen.", "success")
     return redirect(url_for("main.rigs_page") + "#cameras")
 
@@ -206,6 +375,7 @@ def save_optic():
     o.notes = request.form.get("notes") or None
     db.session.add(o)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"{OPTIC_KINDS[o.kind]} „{o.name}“ gespeichert.", "success")
     return redirect(url_for("main.rigs_page") + "#optics")
 
@@ -219,8 +389,86 @@ def save_corrector():
     c.notes = request.form.get("notes") or None
     db.session.add(c)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"„{c.name}“ gespeichert.", "success")
     return redirect(url_for("main.rigs_page") + "#correctors")
+
+
+@main.post("/rigs/rig/<int:rid>/guide-camera")
+def adopt_guide_camera(rid: int):
+    """Take the guide camera suggested from the headers: an existing camera with that (header) name,
+    or a new one."""
+    r = db.session.get(Rig, rid) or abort(404)
+    name = (request.form.get("name") or "").strip() or abort(400, "Name fehlt")
+    cam = next((c for c in db.session.scalars(select(Camera))
+                if _norm(name) in {_norm(c.header_name), _norm(c.name)}), None)
+    if cam is None:
+        h = next((h for h in _header_guide_cameras() if _norm(h["name"]) == _norm(name)), {})
+        cam = Camera(name=name, header_name=name, role="guide", pixel_um=h.get("pixel_um"),
+                     width_px=h.get("width_px"), height_px=h.get("height_px"))
+        db.session.add(cam)
+        flash(f"Guiding-Kamera „{name}“ angelegt.", "info")
+    r.guide_camera = cam
+    db.session.commit()
+    flash(f"Guiding-Kamera von „{r.name}“: {cam.name}.", "success")
+    return redirect(url_for("main.rigs_page") + f"#rig-{rid}")
+
+
+def smart_candidates(rigs) -> list[dict]:
+    """Smart telescopes seen in the headers that no rig covers yet: [{key, name, lights}]."""
+    used = {_norm(r.camera.header_name) for r in rigs} | {_norm(r.camera.name) for r in rigs}
+    seen = {_norm(h["name"]): h for h in _header_cameras()}
+    out = []
+    for key, p in SMART_PRESETS.items():
+        h = seen.get(_norm(p["header"]))
+        if h and _norm(p["header"]) not in used:
+            out.append(dict(key=key, name=p["name"], lights=h.get("n", 0)))
+    return out
+
+
+@main.post("/rigs/smart")
+def create_smart_rig():
+    """A smart telescope as one rig: its camera, optic and integrated mount are created (or reused)."""
+    p = SMART_PRESETS.get(request.form.get("preset")) or abort(400, "Unbekanntes Smart-Teleskop")
+    cams = db.session.scalars(select(Camera)).all()
+    cam = next((c for c in cams if _norm(p["header"]) in {_norm(c.header_name), _norm(c.name)}), None)
+    h = next((h for h in _header_cameras() if _norm(h["name"]) == _norm(p["header"])), {})
+    if cam is None:
+        cam = Camera(name=p["name"], header_name=p["header"])
+        db.session.add(cam)
+    cam.pixel_um = cam.pixel_um or h.get("pixel_um") or p["pixel_um"]
+    cam.width_px = cam.width_px or h.get("width_px") or p["width_px"]
+    cam.height_px = cam.height_px or h.get("height_px") or p["height_px"]
+    optic_name = f"{p['name']} Optik"
+    optic = db.session.scalar(select(Optic).where(Optic.name == optic_name)) or Optic(
+        name=optic_name, kind="telescope", focal_mm=p["focal_mm"], aperture_mm=p["aperture_mm"])
+    mount_name = f"{p['name']} (integriert)"
+    mount = db.session.scalar(select(Mount).where(Mount.name == mount_name)) or Mount(name=mount_name, kind="smart")
+    db.session.add_all([optic, mount])
+    db.session.flush()
+    rig = db.session.scalar(select(Rig).where(Rig.camera_id == cam.id, Rig.optic_id == optic.id))
+    if rig is None:
+        rig = Rig(name=p["name"], camera_id=cam.id, optic_id=optic.id, mount_id=mount.id, active=True)
+        db.session.add(rig)
+        flash(f"Smart-Teleskop „{p['name']}“ als Rig angelegt (Kamera, Optik und Montierung).", "success")
+    else:
+        flash(f"Für „{p['name']}“ gibt es schon das Rig „{rig.name}“.", "info")
+    db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
+    return redirect(url_for("main.rigs_page") + f"#rig-{rig.id}")
+
+
+@main.post("/rigs/mount")
+def save_mount():
+    m = db.session.get(Mount, request.form.get("id", type=int)) if request.form.get("id") else Mount()
+    m.name = (request.form.get("name") or "").strip() or abort(400, "Name fehlt")
+    m.kind = request.form.get("kind") if request.form.get("kind") in MOUNT_KINDS else "eq"
+    m.payload_kg = _f("payload_kg")
+    m.notes = request.form.get("notes") or None
+    db.session.add(m)
+    db.session.commit()
+    flash(f"„{m.name}“ gespeichert.", "success")
+    return redirect(url_for("main.rigs_page") + "#mounts")
 
 
 @main.post("/rigs/rig")
@@ -230,27 +478,35 @@ def save_rig():
     r.camera_id = request.form.get("camera_id", type=int) or abort(400, "Kamera fehlt")
     r.optic_id = request.form.get("optic_id", type=int) or abort(400, "Optik fehlt")
     r.corrector_id = request.form.get("corrector_id", type=int) or None
+    r.mount_id = request.form.get("mount_id", type=int) or None
+    r.guide_camera_id = request.form.get("guide_camera_id", type=int) or None
     r.active = bool(request.form.get("active"))
     r.notes = request.form.get("notes") or None
     db.session.add(r)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"Rig „{r.name}“ gespeichert.", "success")
     return redirect(url_for("main.rigs_page") + "#rigs")
 
 
 @main.post("/rigs/<kind>/<int:oid>/delete")
 def delete_component(kind: str, oid: int):
-    model = {"camera": Camera, "optic": Optic, "corrector": Corrector, "rig": Rig}.get(kind) or abort(404)
+    model = {"camera": Camera, "optic": Optic, "corrector": Corrector, "mount": Mount, "rig": Rig}.get(kind) or abort(404)
     obj = db.session.get(model, oid) or abort(404)
     if kind != "rig":
-        col = {"camera": Rig.camera_id, "optic": Rig.optic_id, "corrector": Rig.corrector_id}[kind]
-        used = db.session.scalars(select(Rig.name).where(col == oid)).all()
+        col = {"camera": Rig.camera_id, "optic": Rig.optic_id, "corrector": Rig.corrector_id,
+               "mount": Rig.mount_id}[kind]
+        cond = (col == oid) | (Rig.guide_camera_id == oid) if kind == "camera" else col == oid
+        used = db.session.scalars(select(Rig.name).where(cond)).all()
         if used:
             flash(f"„{obj.name}“ wird noch in {', '.join(used)} verwendet.", "danger")
             return redirect(url_for("main.rigs_page"))
     name = obj.name
+    if kind == "rig":
+        _remove_photo(obj)
     db.session.delete(obj)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"„{name}“ gelöscht.", "success")
     return redirect(url_for("main.rigs_page"))
 
@@ -267,6 +523,7 @@ def assign_dataset():
     elif m:
         db.session.delete(m)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     return redirect(url_for("main.equipment") + "#datasets")
 
 
@@ -282,8 +539,73 @@ def session_rig(sid: int):
     elif o:
         db.session.delete(o)
     db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     return redirect(url_for("main.session_page", sid=sid))
 
 
 def tolerance() -> float:
     return current_app.config["FOCAL_TOLERANCE"]
+
+
+# --------------------------------------------------------------------------- rig photos
+PHOTO_SIZE = 1600          # longest side of the stored photo (px)
+
+
+def _photo_path(rel: str) -> Path:
+    return Path(current_app.config["DATA_PATH"]) / rel
+
+
+def _remove_photo(r: Rig) -> None:
+    if r.photo:
+        _photo_path(r.photo).unlink(missing_ok=True)
+        r.photo = None
+
+
+@main.post("/rigs/rig/<int:rid>/photo")
+def upload_rig_photo(rid: int):
+    """Store an uploaded photo of a rig (JPG/PNG/WebP …) as JPEG in DATA_PATH/rigs, oriented and resized."""
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    r = db.session.get(Rig, rid) or abort(404)
+    f = request.files.get("photo")
+    if not f or not f.filename:
+        flash("Keine Datei ausgewählt.", "warning")
+        return redirect(url_for("main.rigs_page") + "#rigs")
+    try:
+        with Image.open(f.stream) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((PHOTO_SIZE, PHOTO_SIZE), Image.LANCZOS)
+            rel = f"rigs/{rid}-{secrets.token_hex(4)}.jpg"         # new name: browsers reload it
+            out = _photo_path(rel)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            im.save(out, "JPEG", quality=88)
+    except (UnidentifiedImageError, OSError, ValueError):
+        flash(f"„{f.filename}“ ist kein lesbares Bild (JPG, PNG oder WebP).", "danger")
+        return redirect(url_for("main.rigs_page") + "#rigs")
+    _remove_photo(r)
+    r.photo = rel
+    db.session.commit()
+    flash(f"Foto für „{r.name}“ gespeichert.", "success")
+    return redirect(url_for("main.rigs_page") + f"#rig-{rid}")
+
+
+@main.post("/rigs/rig/<int:rid>/photo/delete")
+def delete_rig_photo(rid: int):
+    r = db.session.get(Rig, rid) or abort(404)
+    _remove_photo(r)
+    db.session.commit()
+    return redirect(url_for("main.rigs_page") + f"#rig-{rid}")
+
+
+@main.route("/rigs/rig/<int:rid>/photo")
+def rig_photo(rid: int):
+    r = db.session.get(Rig, rid) or abort(404)
+    if not r.photo or not _photo_path(r.photo).is_file():
+        abort(404)
+    return send_file(_photo_path(r.photo), mimetype="image/jpeg", max_age=86400)
+
+
+@main.app_errorhandler(413)
+def upload_too_large(_e):
+    flash(f"Datei zu groß (höchstens {current_app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)} MB).", "danger")
+    return redirect(request.referrer or url_for("main.rigs_page"))
+

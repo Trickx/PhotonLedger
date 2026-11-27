@@ -20,6 +20,7 @@ sondern auf der Seite *Prüfungen* gemeldet (Regelname in Klammern).
     │   ├── Biases/
     │   ├── DarkFlats/                     optional
     │   ├── Logs/                          ASIAIR-Autorun-, PHD2-, NINA-Logs (optional)
+    │   ├── Notizen.md                     eigene Notizen zur Nacht (optional, Markdown)
     │   ├── Processing/                    Stacks/Zwischenschritte/Finals nur dieser Nacht (optional)
     │   └── Finals/                        Ergebnisse nur dieser Nacht, jedes Format (optional)
     ├── <Session 2>/                       2026-04-29
@@ -27,7 +28,8 @@ sondern auf der Seite *Prüfungen* gemeldet (Regelname in Klammern).
     ├── Processing/                        Bearbeitung über alle Sessions des Ziels
     │   ├── master/                        WBPP-Ausgabe, Zwischenschritte und *final*-Dateien
     │   └── *.xisf | *.fit | *.tif …       PixInsight-/Siril-Schritte, Zwischenstände
-    └── Finals/                            fertige Ergebnisse, jedes Format (JPG, TIFF, XISF …)
+    ├── Finals/                            fertige Ergebnisse, jedes Format (JPG, TIFF, XISF …)
+    └── Notizen.md                         eigene Notizen zum Ziel (optional, Markdown)
 ```
 
 ## Ebenen

@@ -113,10 +113,44 @@ def session_page(sid: int):
     from webapp.main.wbpp_view import session_runs
     from webapp.archive import archives
     folder = archives.resolve(current_app.config, s.root)
+    from webapp.main.downloads import session_summary
     return render_template("session.html", s=s, t=s.target, folder=str(folder) if folder else s.root,
+                           folder_url=archives.external_url(current_app.config, s.root), downloads=session_summary(s),
                            wbpp=session_runs(s), sad_status=_sad_dot(s, blocks), blocks=blocks, map_labels=MAP_LABELS,
                            side_colors=SIDE_COLORS, rig_rows=rig_rows, all_rigs=res.rigs,
-                           guiding=guiding_summary(s), night=_night(s))
+                           guiding=guiding_summary(s), night=_night(s), filters=_filter_counts(s),
+                           notes=_notes(s.root), cal=_calibration(s), drivers=_drivers(res))
+
+
+def _drivers(res):
+    from webapp.main.rigs import mount_drivers
+    return mount_drivers(res)
+
+
+def _calibration(s):
+    from webapp.main.wbpp_view import session_calibration
+    return session_calibration().get(s.root)
+
+
+def _notes(*folders) -> list:
+    from webapp.models import Note
+    return db.session.scalars(select(Note).where(Note.folder.in_(folders)).order_by(Note.path)).all()
+
+
+def _filter_counts(s) -> list[dict]:
+    """Per filter: usable lights (not rejected, no duplicates), their exposure and the flats."""
+    from webapp.models import Frame
+    rows: dict[str, dict] = {}
+    for f in db.session.scalars(select(Frame).where(Frame.session_root == s.root,
+                                                    Frame.frame_type.in_(("light", "flat")),
+                                                    Frame.rejected.is_(False))):
+        r = rows.setdefault(f.filter or "Ohne Filter", dict(name=f.filter or "Ohne Filter", lights=0, seconds=0.0, flats=0))
+        if f.frame_type == "flat":
+            r["flats"] += 1
+        elif not f.duplicate:
+            r["lights"] += 1
+            r["seconds"] += f.exptime or 0
+    return sorted(rows.values(), key=lambda r: (-r["seconds"], -r["flats"], r["name"]))
 
 
 def _night(s):

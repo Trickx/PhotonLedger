@@ -1,8 +1,11 @@
+{% from "_rig.html" import rig_cell, rig_name, rig_placeholder %}
+{% from "_notes.html" import notes_card with context %}
+{% from "_cal.html" import fdb %}
 {% from "_phd_dot.html" import phd_dot, night_dot %}
 {% if is_htmx %}<title>{{ t.name }} · Photon Ledger</title>{% endif %}
 <div class="pl-hero {% if not cover %}pl-hero-empty{% endif %}">
     {% if cover %}
-        <a href="{{ url_for('main.media', kind='previews', vid=cover.id) }}" target="_blank" title="Vorschau öffnen">
+        <a href="{{ url_for('main.media', kind='previews', vid=cover.id) }}" data-pl-open="v{{ cover.id }}" title="Im Vollbild ansehen">
             <img src="{{ url_for('main.media', kind='previews', vid=cover.id) }}" alt="{{ cover.filename }}">
         </a>
         <span class="pl-hero-caption">{{ cover.filename }}</span>
@@ -36,15 +39,25 @@
 
 {% if versions %}
 <section class="pl-section">
-    <h2>Versionen <span class="pl-count">{{ versions|length }}</span></h2>
+    <h2 class="d-flex align-items-baseline gap-2">Versionen <span class="pl-count">{{ versions|length }}</span>
+        {% if may_download %}<a class="btn btn-sm btn-link p-0 ms-auto pl-h2-action" href="{{ url_for('main.download_finals', tid=t.id) }}"
+           title="Alle Versionen und alle Dateien aus Finals-Ordnern (auch FITS/XISF) als ZIP"><i class="bi bi-download"></i> Finals als ZIP</a>{% endif %}</h2>
     <div class="pl-versions">
         {% for v in versions %}
+        <div class="pl-version-wrap">
         <button class="pl-version {% if cover and v.id == cover.id %}active{% endif %}" type="button"
-                hx-post="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}" hx-target="#detail"
-                title="{{ v.path }}{% if v.width %} · {{ v.width }}×{{ v.height }}{% endif %} – als Titelbild wählen">
+                id="v{{ v.id }}" data-pl-view="versions" data-full="{{ url_for('main.media', kind='previews', vid=v.id) }}"
+                data-name="{{ v.filename }}" data-info="{% if v.width %}{{ v.width }} × {{ v.height }} px · {% endif %}{{ v.size|filesize }}"
+                {% if may_download %}data-download="{{ url_for('main.download_version', vid=v.id) }}"{% endif %}
+                {% if may_change %}data-cover="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}"{% endif %}
+                {% if cover and v.id == cover.id %}data-is-cover="1"{% endif %}
+                title="{{ v.path }} – im Vollbild ansehen">
             <img loading="lazy" src="{{ url_for('main.media', kind='thumbs', vid=v.id) }}" alt="{{ v.filename }}">
             {% if cover and v.id == cover.id %}<i class="bi bi-check-circle-fill pl-version-check"></i>{% endif %}
         </button>
+        {% if may_download %}<a class="pl-version-dl" href="{{ url_for('main.download_version', vid=v.id) }}" title="{{ v.filename }} herunterladen ({{ v.size|filesize }})"
+           aria-label="{{ v.filename }} herunterladen"><i class="bi bi-download"></i></a>{% endif %}
+        </div>
         {% endfor %}
     </div>
     {% if broken %}<p class="pl-note"><i class="bi bi-exclamation-triangle"></i> {{ broken|length }} Datei(en) ließen sich nicht als Vorschau lesen – siehe Indexer.</p>{% endif %}
@@ -58,7 +71,6 @@
         <div class="pl-tile"><b>{{ t.lights|num }}</b><span>Lights</span></div>
         <div class="pl-tile"><b>{{ filters|length }}</b><span>Filter</span></div>
         <div class="pl-tile"><b>{{ datasets|length }}</b><span>Ausrüstung</span></div>
-        <div class="pl-tile"><b>{{ n_calibrated }}/{{ n_sessions }}</b><span>Kalibriert</span></div>
     </div>
     {% if rejected %}<p class="pl-note">{{ rejected }} aussortierte Lights sind nicht mitgezählt.</p>{% endif %}
 </section>
@@ -101,15 +113,21 @@
 </section>
 {% endif %}
 
+{{ notes_card(notes) }}
+
 {% if datasets %}
 <section class="pl-section">
     <h2>Datensätze</h2>
     <div class="pl-datasets">
         {% for d in datasets %}
         <div class="pl-dataset">
+            {% set ph = d.rigs|map(attribute='rig')|select|selectattr('photo')|first %}
+            {% if ph %}<a class="pl-rig-thumb pl-dataset-thumb" href="{{ url_for('main.rig_photo', rid=ph.id, v=ph.photo) }}" target="_blank" title="Foto von {{ ph.name }}">
+                <img src="{{ url_for('main.rig_photo', rid=ph.id, v=ph.photo) }}" alt="Foto von {{ ph.name }}" loading="lazy"></a>
+            {% else %}<span class="pl-rig-thumb pl-dataset-thumb">{{ rig_placeholder() }}</span>{% endif %}
             <div class="pl-dataset-main">
-                <strong>{% if d.focal %}{{ d.focal }} mm{% else %}Brennweite unbekannt{% endif %}</strong>
-                <span>{{ d.camera or 'Kamera unbekannt' }}{% if d.telescope %} · {{ d.telescope }}{% endif %}</span>
+                <strong>{% for x in d.rigs %}{% if not loop.first %} / {% endif %}{% if x.rig %}{{ rig_name(x) }}{% else %}<span class="text-body-secondary" title="Kein Rig passt zu Kamera und Brennweite – unter Ausrüstung oder auf der Session-Seite zuordnen">kein Rig</span>{% endif %}{% endfor %}</strong>
+                <span>{% if d.focal %}{{ d.focal }} mm{% else %}Brennweite unbekannt{% endif %} · {{ d.camera or 'Kamera unbekannt' }}{% if d.telescope %} · {{ d.telescope }}{% endif %}</span>
                 {% if d.scale %}<span class="pl-geo">{{ '%.2f'|format(d.scale)|replace('.', ',') }}″/px · {{ '%.0f'|format(d.fov_w) }}′ × {{ '%.0f'|format(d.fov_h) }}′</span>{% endif %}
             </div>
             <div class="pl-dataset-meta">
@@ -128,7 +146,7 @@
     <div class="table-responsive">
     <table class="table table-sm pl-table align-middle">
         <thead><tr>
-            <th>Datum</th><th>Ordner</th><th>Ausrüstung</th>
+            <th>Datum</th><th>Ordner</th><th>Rig</th>
             <th class="text-end">Lights</th><th class="text-end">Belichtung</th>
             <th class="text-center" title="Flats / Darks / Bias">F / D / B</th>
             <th class="text-center" title="ASIAIR- oder NINA-Log (mit Airgus ausgewertet): grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">Log</th><th class="text-center" title="PHD2-Guiding-Log: grün vorhanden ohne Fehler, orange kein Log, rot mit Fehlern">PHD2</th>
@@ -138,13 +156,12 @@
             <tr>
                 <td class="text-nowrap"><a href="{{ url_for('main.session_page', sid=s.id) }}">{{ s.date|de_date }}</a>{% if s.nights|length > 1 %}<br><small class="text-body-secondary">{{ s.nights|length }} Nächte</small>{% endif %}
                 {%- set o = sad.get(s.root) %}{% if o %}<br><span class="pl-optik" title="StarAberrationDiagnostics: FWHM Mitte, Rand/Mitte, Elliptizität"><i class="bi bi-bullseye"></i> {% if o.fwhm_center_arcsec %}{{ '%.1f'|format(o.fwhm_center_arcsec)|replace('.', ',') }}″{% else %}{{ '%.2f'|format(o.fwhm_center or 0)|replace('.', ',') }} px{% endif %} · {{ '%.2f'|format(o.ratio or 0)|replace('.', ',') }} · ε {{ '%.2f'|format(o.ellipticity or 0)|replace('.', ',') }}</span>{% endif %}</td>
-                <td class="pl-folder" title="{{ s.root }}">{{ s.label or '(Zielordner)' }}
+                <td class="pl-folder" title="{{ s.root }}">{{ s.label or '(Zielordner)' }}{% if s.root in noted %} <i class="bi bi-journal-text text-body-secondary" title="Notizen vorhanden"></i>{% endif %}
                     {% if s.duplicate_of %}<br><small class="text-warning" title="Gleiche Lights (Kamera, DATE-OBS, Belichtung) liegen auch in {{ s.duplicate_of }}">Kopie von {{ s.duplicate_of }}</small>{% endif %}</td>
-                <td>{% for d in s.datasets %}<div class="text-nowrap">{{ d.camera or '?' }}{% if d.focal %} · {{ d.focal }} mm{% endif %}</div>{% else %}–{% endfor %}</td>
+                <td>{{ rig_cell(rigs[s.id]) }}</td>
                 <td class="text-end">{{ s.lights }}{% if s.rejected %}<br><small class="text-body-secondary">+{{ s.rejected }} aussort.</small>{% endif %}{% if s.duplicates %}<br><small class="text-body-secondary">+{{ s.duplicates }} doppelt</small>{% endif %}</td>
                 <td class="text-end text-nowrap">{{ s.exposure_s|duration }}</td>
-                <td class="text-center text-nowrap {% if not s.calibrated and s.lights %}text-warning{% endif %}">
-                    {{ s.flats or '–' }} / {{ s.darks or '–' }} / {{ s.biases or '–' }}</td>
+                {{ fdb(s, cal) }}
                 <td class="text-center">{% if s.lights %}{{ night_dot(night.get(s.root), s.id) }}{% endif %}</td>
                 <td class="text-center text-nowrap">{% if s.lights %}{{ phd_dot(phd.get(s.root), s.id) }}{% endif %}</td>
             </tr>

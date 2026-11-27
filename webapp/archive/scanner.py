@@ -16,7 +16,7 @@ from sqlalchemy import delete, select, update
 from webapp import db
 from webapp.models import Frame, IndexRun, Intermediate, RigSessionOverride, Session, Target, Version
 
-from . import archives, nightlog, phd2, rules, sad, wbpp
+from . import archives, nightlog, notes, phd2, rules, sad, wbpp
 from .headers import read_header
 
 log = logging.getLogger("photonledger.scan")
@@ -81,6 +81,7 @@ def scan(cfg: dict, run: IndexRun) -> None:
     phd_logs: list[str] = []
     night_logs: list[str] = []
     wbpp_logs: list[str] = []
+    note_files: list[str] = []
     # folders that could not be read (SMB hiccup, permissions): nothing below them is deleted this run
     failed: set[str] = set()
     problems: list[str] = []
@@ -107,6 +108,7 @@ def scan(cfg: dict, run: IndexRun) -> None:
             phd_logs += phd2.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
             night_logs += nightlog.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
             wbpp_logs += wbpp.find_logs(dirpath, dirs, failed=failed, rel=archive.rel)
+            note_files += notes.find(dirpath, files)
             _prune(dirs, ignore)
             dirs.sort()
             inner_dir = os.path.relpath(dirpath, archive.path).replace(os.sep, "/")
@@ -186,6 +188,7 @@ def scan(cfg: dict, run: IndexRun) -> None:
     phd2.sync(cfg, run, phd_logs, protect=failed)
     nightlog.sync(cfg, run, night_logs, protect=failed)
     wbpp.sync(cfg, run, wbpp_logs, protect=failed)
+    notes.sync(cfg, run, note_files, protect=failed)
 
 
 def keep(column, failed: set[str]) -> list:

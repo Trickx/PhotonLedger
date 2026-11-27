@@ -105,3 +105,44 @@ def session_runs(s) -> dict | None:
     with_session = [r for r in runs if r["session_in_stack"]]
     return dict(runs=with_session or runs, session_lights=len(mine), contains_session=bool(with_session),
                 status=session_status().get(s.root), total=len(runs))
+
+
+def session_calibration() -> dict[str, dict]:
+    """session root -> how WBPP calibrated its lights, from the newest run that calibrated any of them:
+    {date, lights, dark, flat, bias}; each of dark/flat/bias is None (not used) or
+    {master, frames (single frames it was made of, None if a ready master was given), folders}."""
+    from collections import defaultdict
+
+    from webapp.models import WbppRun
+    runs = [w for w in db.session.scalars(select(WbppRun).where(WbppRun.error.is_(None))
+                                          .order_by(WbppRun.started.desc()))
+            if (w.calibration or {}).get("groups")]
+    if not runs:
+        return {}
+    lights: dict[str, set[str]] = defaultdict(set)
+    q = select(Frame.session_root, Frame.path).where(Frame.frame_type == "light", Frame.rejected.is_(False),
+                                                     Frame.duplicate.is_(False))
+    for root, path in db.session.execute(q):
+        lights[root].add(wbpp.stem_of(path))
+    out = {}
+    for root, mine in lights.items():
+        for w in runs:
+            groups = [g for g in w.calibration["groups"] if mine & set(g.get("lights") or [])]
+            if not groups:
+                continue
+            masters = w.calibration.get("masters") or {}
+            cal = dict(date=w.started, run_id=w.id, lights=len(mine & {s for g in groups for s in g["lights"]}),
+                       of=len(mine))
+            for kind in ("dark", "flat", "bias"):
+                names = [g["masters"].get(kind) for g in groups if g.get("masters", {}).get(kind)]
+                if not names:
+                    cal[kind] = None
+                    continue
+                info = [masters.get(n) or {} for n in dict.fromkeys(names)]      # each master once
+                frames = [i.get("frames") for i in info if i.get("frames")]
+                folders = sorted({f for i in info for f in i.get("folders") or []})
+                cal[kind] = dict(master=names[0], masters=len(set(names)), frames=sum(frames) if frames else None,
+                                 folders=folders)
+            out[root] = cal
+            break
+    return out
