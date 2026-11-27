@@ -542,3 +542,7 @@ ul.pl-issue-hint { padding-left: 18px; }
 .pl-rig-thumb .pl-rig-ph { width: 64px; height: 64px; aspect-ratio: auto; border-radius: 6px; }
 .pl-dataset-thumb .pl-rig-ph { width: 52px; height: 52px; }
 .pl-badge-smart { background: var(--pl-accent-soft); color: var(--pl-accent); font-weight: 500; }
+.pl-optional { font-size: .72rem; padding: 0 5px; border-radius: 4px; background: var(--pl-accent-soft); color: var(--pl-accent); }
+.pl-rig-group { margin-bottom: 18px; }
+.pl-rig-group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 8px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--bs-border-color); }

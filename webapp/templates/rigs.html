@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block title %}Rigs · Photon Ledger{% endblock %}
-{% from "_rig.html" import num, rig_placeholder, rig_specs %}
+{% from "_rig.html" import num, rig_parts, rig_placeholder, rig_specs %}
 {% macro edit_delete(kind, obj) %}
     <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', **{kind: obj.id}) }}#{{ 'guide-camera' if kind == 'camera' and obj.role == 'guide' else kind }}-form">Bearbeiten</a>
     <form class="d-inline" method="post" action="{{ url_for('main.delete_component', kind=kind, oid=obj.id) }}"
@@ -22,6 +22,16 @@
         <div class="pl-seeing">Bewertung der Abtastung bei Seeing
             {% for s in (1.5, 2.5, 4.0) %}<a class="btn btn-sm {% if seeing == s %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('main.rigs_page', seeing=s) }}#rigs">{{ num(s, 1) }}″</a>{% endfor %}
         </div>
+        {% if mergeable and may_change %}
+        <div class="alert alert-info py-2 small d-flex flex-wrap align-items-center gap-2">
+            <i class="bi bi-lightbulb"></i> Gleiche Rigs, nur mit und ohne Flattener/Reducer/Extender:
+            {% for keep, drop in mergeable %}
+            <form class="d-inline" method="post" action="{{ url_for('main.merge_rigs', keep_id=keep.id, drop_id=drop.id) }}"
+                  onsubmit="return confirm('„{{ drop.name }}“ in „{{ keep.name }}“ zusammenfassen? {{ keep.corrector.name }} wird optional, „{{ drop.name }}“ entfällt.')">
+                <button class="btn btn-sm btn-outline-primary">„{{ drop.name }}“ in „{{ keep.name }}“ zusammenfassen</button></form>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if smart_found and may_change %}
         <div class="alert alert-info py-2 small d-flex flex-wrap align-items-center gap-2">
             <i class="bi bi-lightbulb"></i> In den FITS-Headern gefunden, aber noch ohne Rig:
@@ -32,8 +42,15 @@
             {% endfor %}
         </div>
         {% endif %}
+        {% for g in rig_groups %}
+        <div class="pl-rig-group">
+        <div class="pl-rig-group-head">
+            <span class="pl-phd-title"><i class="bi bi-binoculars"></i> {{ g.optic.name }}</span>
+            <span class="pl-phd-kpi">{{ num(g.optic.focal_mm) }}{% if g.optic.focal_max_mm %}–{{ num(g.optic.focal_max_mm) }}{% endif %} mm{% if g.optic.aperture_mm %} · {{ num(g.optic.aperture_mm) }} mm Öffnung{% endif %}</span>
+            <span class="pl-phd-kpi">{{ g.rigs|length }} Rig{{ 's' if g.rigs|length != 1 }}{% if g.seconds %} · {{ g.seconds|hours }} h · {{ g.lights|num }} Lights · {{ g.sessions }} Session{{ 's' if g.sessions != 1 }} · {{ g.targets }} Ziel{{ 'e' if g.targets != 1 }}{% else %} · noch keine Aufnahmen{% endif %}</span>
+        </div>
         <div class="pl-rig-cards">
-        {% for r in rigs %}
+        {% for r in g.rigs %}
             <div class="pl-rig-card {% if not r.active %}pl-inactive{% endif %}" id="rig-{{ r.id }}">
                 {% if r.photo %}
                 <a class="pl-rig-photo" href="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" target="_blank" title="Foto in voller Größe">
@@ -46,12 +63,14 @@
                     {% if r.mount and r.mount.kind == 'smart' %}<span class="badge pl-badge-smart" title="Kamera, Optik und Montierung in einem Gerät">Smart-Teleskop</span>{% endif %}
                     <span class="ms-auto">
                         <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rig-form">Bearbeiten</a>
+                        <a class="btn btn-sm btn-link p-0 ms-2" href="{{ url_for('main.rigs_page', copy=r.id) }}#rig-form"
+                           title="Neues Rig mit denselben Komponenten anlegen – z. B. mit anderer Kamera">Duplizieren</a>
                         <form class="d-inline" method="post" action="{{ url_for('main.delete_component', kind='rig', oid=r.id) }}"
                               onsubmit="return confirm('Rig „{{ r.name }}“ löschen? Zuordnungen zu Aufnahmen gehen verloren.')">
                             <button class="btn btn-sm btn-link text-danger p-0 ms-2">Löschen</button></form>
                     </span>
                 </div>
-                <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}</div>
+                <div class="pl-rig-parts">{{ rig_parts(r) }}</div>
                 {{ rig_specs(r, seeing, drivers) }}
                 {% set g = guides.get(r.id) %}
                 {% if g and not r.guide_camera %}
@@ -78,14 +97,16 @@
                 </div>
                 {% endif %}
             </div>
-        {% else %}<p class="text-body-secondary">Noch keine Rigs.</p>{% endfor %}
+        {% endfor %}
         </div>
-        {% set r = cur.rig %}
+        </div>
+        {% else %}<p class="text-body-secondary">Noch keine Rigs.</p>{% endfor %}
+        {% set editing = cur.rig is not none %}{% set r = cur.rig or cur.source %}
         <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_rig') }}" id="rig-form">
-            <h3 class="pl-form-title">{{ 'Rig bearbeiten' if r else 'Neues Rig' }}</h3>
-            {% if r %}<input type="hidden" name="id" value="{{ r.id }}">{% endif %}
+            <h3 class="pl-form-title">{% if editing %}Rig bearbeiten{% elif r %}Neues Rig – Kopie von „{{ r.name }}“{% else %}Neues Rig{% endif %}</h3>
+            {% if editing %}<input type="hidden" name="id" value="{{ r.id }}">{% endif %}
             <div class="pl-form-grid">
-                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ r.name if r else '' }}" placeholder="z. B. Skywatcher + 550D"></label>
+                <label>Name<input class="form-control form-control-sm" name="name" required value="{{ (r.name if editing else r.name ~ ' (Kopie)') if r else '' }}" placeholder="z. B. Skywatcher + 550D"></label>
                 <label>Kamera<select class="form-select form-select-sm" name="camera_id" required>
                     <option value="">– wählen –</option>
                     {% for c in cameras %}<option value="{{ c.id }}" {% if r and r.camera_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
@@ -98,6 +119,7 @@
                     <option value="">keiner</option>
                     {% for c in correctors %}<option value="{{ c.id }}" {% if r and r.corrector_id == c.id %}selected{% endif %}>{{ c.name }} (×{{ num(c.factor, 2) }})</option>{% endfor %}
                 </select></label>
+                <label class="pl-check" title="Für Barlow/Extender, die nur in manchen Nächten verwendet werden: das Rig deckt dann beide Brennweiten ab – kein zweites Rig nötig"><input type="checkbox" name="corrector_optional" value="1" {% if r and r.corrector_optional %}checked{% endif %}> Flattener/Reducer/Extender optional</label>
                 <label>Montierung<select class="form-select form-select-sm" name="mount_id">
                     <option value="">keine angegeben</option>
                     {% for m in mounts %}<option value="{{ m.id }}" {% if r and r.mount_id == m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
@@ -109,7 +131,7 @@
                 <label class="pl-check"><input type="checkbox" name="active" value="1" {% if not r or r.active %}checked{% endif %}> aktiv</label>
             </div>
             <div class="pl-form-actions">
-                <button class="btn btn-sm btn-primary">{{ 'Rig aktualisieren' if r else 'Rig anlegen' }}</button>
+                <button class="btn btn-sm btn-primary">{{ 'Rig aktualisieren' if editing else 'Rig anlegen' }}</button>
                 {% if r %}<a class="btn btn-sm btn-link" href="{{ url_for('main.rigs_page') }}#rigs">Abbrechen</a>{% endif %}
                 {% if not cameras or not optics %}<span class="pl-note">Zuerst Kamera und Optik anlegen (weiter unten).</span>{% endif %}
             </div>

@@ -389,3 +389,86 @@ def test_smart_telescope_rig(app, client):  # noqa: F811
     client.post("/rigs/smart", data={"preset": "dwarf3"})                # twice: nothing duplicated
     with app.app_context():
         assert db.session.query(Rig).filter_by(name="DWARF 3").count() == 1 and db.session.query(Mount).count() == n_mounts
+
+
+def test_optional_extender(app, client):  # noqa: F811
+    """An optional extender lets one rig cover both focal lengths; two rigs that differ only in the
+    extender are merged into one."""
+    from pathlib import Path
+
+    from tests.test_app import _light
+    from webapp.indexer import run_once
+    from webapp.models import Corrector
+    arc = Path(app.config["ARCHIVE_PATH"])
+    _light(arc / "M51 (Whirlpool Galaxy)" / "2026-04-03" / "Lights" / "b.fit", "2026-04-03T22:00:00", focal=1510.0,
+           ra=202.47, dec=47.2)
+    with app.app_context():
+        run_once(app)
+    _setup(client)
+    client.post("/rigs/corrector", data=dict(name="Barlow 2x", kind="extender", factor="2"))
+    with app.app_context():
+        ids = {c.name: c.id for c in db.session.query(Camera)} | {o.name: o.id for o in db.session.query(Optic)}
+        barlow = db.session.query(Corrector).filter_by(name="Barlow 2x").one().id
+    client.post("/rigs/rig", data=dict(name="Newton", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"], active="1"))
+    client.post("/rigs/rig", data=dict(name="Newton Barlow", camera_id=ids["Canon 1200D"],
+                                       optic_id=ids["Skywatcher 150P"], corrector_id=barlow, active="1"))
+    page = client.get("/rigs").data.decode()
+    assert "„Newton“ in „Newton Barlow“ zusammenfassen" in page
+    with app.app_context():
+        keep = db.session.query(Rig).filter_by(name="Newton Barlow").one().id
+        drop = db.session.query(Rig).filter_by(name="Newton").one().id
+    client.post(f"/rigs/merge/{keep}/{drop}")
+    with app.app_context():
+        assert [r.name for r in db.session.query(Rig)] == ["Newton Barlow"]
+        r = db.session.get(Rig, keep)
+        assert r.corrector_optional and r.factors == [1.0, 2.0]
+        from webapp.main.rigs import Resolver
+        res = Resolver(0.03)
+        assert res.resolve("x", "Canon EOS 1200D", 755)[0].id == keep          # without the Barlow
+        assert res.resolve("x", "Canon EOS 1200D", 1510)[0].id == keep         # with it
+        s_with = db.session.query(Session).filter_by(root="M51 (Whirlpool Galaxy)/2026-04-03").one().id
+        s_without = db.session.query(Session).filter(Session.root.like("%2026-03-22")).one().id
+    page = client.get("/rigs").data.decode()
+    assert "750 / 1500 mm" in page and "optional</span>" in page and "zusammenfassen" not in page
+    assert "mit Barlow 2x" in client.get(f"/session/{s_with}").data.decode()
+    assert "ohne Barlow 2x" in client.get(f"/session/{s_without}").data.decode()
+
+
+def test_rigs_grouped_by_optic(app, client):  # noqa: F811
+    """The rigs page groups rigs by optic (one telescope, several cameras) with the totals of the group."""
+    _setup(client)
+    with app.app_context():
+        ids = {c.name: c.id for c in db.session.query(Camera)} | {o.name: o.id for o in db.session.query(Optic)}
+    client.post("/rigs/rig", data=dict(name="Newton 1200D", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"], active="1"))
+    client.post("/rigs/rig", data=dict(name="Newton 7D", camera_id=ids["Canon 7D Mark II"], optic_id=ids["Skywatcher 150P"], active="1"))
+    client.post("/rigs/rig", data=dict(name="Zoom 7D", camera_id=ids["Canon 7D Mark II"],
+                                       optic_id=ids["Canon EF 70-300mm L IS USM"], active="1"))
+    page = client.get("/rigs").data.decode()
+    groups = page.split('class="pl-rig-group"')[1:]
+    assert len(groups) == 2
+    newton = next(g for g in groups if "Skywatcher 150P</span>" in g)
+    assert "Newton 1200D" in newton and "Newton 7D" in newton and "Zoom 7D" not in newton
+    assert "2 Rigs" in newton and "Lights" in newton
+
+
+def test_duplicate_rig(app, client):  # noqa: F811
+    """Duplicating opens the new-rig form filled with the components of the rig; saving creates a new rig."""
+    from webapp.models import Mount
+    _setup(client)
+    client.post("/rigs/mount", data=dict(name="EQ6-R Pro", kind="eq"))
+    with app.app_context():
+        ids = {c.name: c.id for c in db.session.query(Camera)} | {o.name: o.id for o in db.session.query(Optic)}
+        mid = db.session.query(Mount).one().id
+    client.post("/rigs/rig", data=dict(name="Newton 1200D", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"],
+                                       corrector_id="1", mount_id=mid, active="1"))
+    with app.app_context():
+        rid = db.session.query(Rig).filter_by(name="Newton 1200D").one().id
+    page = client.get(f"/rigs?copy={rid}").data.decode()
+    form = page.split('id="rig-form"', 1)[1].split("</form>", 1)[0]
+    assert "Kopie von „Newton 1200D“" in form and 'value="Newton 1200D (Kopie)"' in form
+    assert 'name="id"' not in form and "Rig anlegen" in form
+    assert f'<option value="{mid}" selected>' in form and f'<option value="{ids["Skywatcher 150P"]}" selected>' in form
+    client.post("/rigs/rig", data=dict(name="Newton 7D", camera_id=ids["Canon 7D Mark II"], optic_id=ids["Skywatcher 150P"],
+                                       corrector_id="1", mount_id=mid, active="1"))
+    with app.app_context():
+        assert {r.name for r in db.session.query(Rig)} == {"Newton 1200D", "Newton 7D"}

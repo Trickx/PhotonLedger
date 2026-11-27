@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% from "_rig.html" import rig_placeholder, rig_specs %}
+{% from "_rig.html" import rig_parts, rig_placeholder, rig_specs %}
 {% from "_notes.html" import notes_card with context %}
 {% block title %}{{ t.name if t else '' }} {{ s.label or s.date|de_date }} · Photon Ledger{% endblock %}
 {% macro cal_table(s, cal) %}
@@ -66,8 +66,8 @@
                 <div class="pl-rig-body">
                 {% if r %}
                 <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-tools"></i> Rig · {{ r.name }}</span>{% if r.mount and r.mount.kind == 'smart' %} <span class="badge pl-badge-smart">Smart-Teleskop</span>{% endif %}
-                    <span class="pl-how ms-auto">{{ {'session': 'für diese Session gewählt', 'manual': 'von Hand zugeordnet'}.get(row.how, 'automatisch zugeordnet') }}</span></div>
-                <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}</div>
+                    <span class="pl-how ms-auto">{% if r.factors|length > 1 %}{% set f = r.factor_for(d.focal) %}{% if f is not none %}{{ 'mit' if f != 1.0 else 'ohne' }} {{ r.corrector.name }} · {% endif %}{% endif %}{{ {'session': 'für diese Session gewählt', 'manual': 'von Hand zugeordnet'}.get(row.how, 'automatisch zugeordnet') }}</span></div>
+                <div class="pl-rig-parts">{{ rig_parts(r) }}</div>
                 {{ rig_specs(r, drivers=drivers) }}
                 {% else %}
                 <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-tools"></i> Rig · <span class="text-body-secondary">kein Rig</span></span></div>

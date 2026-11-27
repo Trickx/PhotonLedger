@@ -43,6 +43,34 @@ def derive(cfg: dict) -> None:
         if f.camera:
             f.camera = canonical[" ".join(f.camera.lower().split())]
 
+    # ---- focal length from the header; corrected where the capture software wrote a wrong pixel size and
+    #      derived the focal length from its plate solve (e.g. ASIAIR with a Canon 7D Mark II: 4.29 instead of
+    #      4.1 um gives 792 instead of 756 mm). The pixel size of the camera in the rigs is taken as true.
+    known_pixel = _known_pixel_sizes()
+    _known_pixel_sizes_cache.clear()
+    _known_pixel_sizes_cache.update(known_pixel)
+    corrected = 0
+    learned: dict[tuple, list[float]] = defaultdict(list)     # (camera, header focal) -> corrected focal lengths
+    unsolved = []
+    for f in frames:
+        f.focal = _num((f.header or {}).get("FOCALLEN"), f.focal)
+        fixed = _focal_from_solve(f, known_pixel.get(_norm(f.camera)))
+        if fixed:
+            learned[(f.camera, round(f.focal))].append(fixed)
+            f.focal = fixed
+            corrected += 1
+        elif f.focal:
+            unsolved.append(f)
+    # the capture software keeps the focal length of its last solve for the following images (without WCS) -
+    # lights as well as the flats, darks and bias taken afterwards: the same header value gets the same correction
+    for f in unsolved:
+        vals = learned.get((f.camera, round(f.focal)))
+        if vals:
+            f.focal = round(statistics.median(vals), 1)
+            corrected += 1
+    if corrected:
+        log.info("%d Brennweiten aus Plate-Solve und Pixelgröße der Kamera korrigiert", corrected)
+
     # ---- focal length groups (per camera, lights only)
     by_cam: dict[str | None, list[float]] = defaultdict(list)
     for f in frames:
@@ -172,6 +200,9 @@ def derive(cfg: dict) -> None:
             k = (f.camera, f.focal_group, f.telescope)
             d = ds.setdefault(k, dict(camera=f.camera, focal=f.focal_group, telescope=f.telescope,
                                       seconds=0.0, lights=0))
+            hf = _num((f.header or {}).get("FOCALLEN"), None)
+            if hf and f.focal and abs(hf - f.focal) > 1:           # corrected: keep what the header said
+                d["focal_header"] = round(hf)
             d["seconds"] += f.exptime or 0
             d["lights"] += 1
             g = _geometry(f)
@@ -208,19 +239,61 @@ def derive(cfg: dict) -> None:
     log.info("%d Ziele, %d Sessions", len(targets), len(by_root))
 
 
+def _norm(s) -> str:
+    return " ".join(str(s or "").lower().split())
+
+
+def _num(v, default):
+    try:
+        return float(v) if v not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _known_pixel_sizes() -> dict[str, float]:
+    """Pixel size (um) of the cameras entered for the rigs, by header and display name."""
+    from webapp.models import Camera
+    out = {}
+    for c in db.session.scalars(select(Camera).where(Camera.pixel_um.is_not(None))):
+        for n in (c.name, c.header_name):
+            if n:
+                out[_norm(n)] = c.pixel_um
+    return out
+
+
+def _solved_scale(h: dict) -> float | None:
+    """arcsec per (binned) pixel from the WCS of a plate solve (CD matrix), None without one."""
+    try:
+        cd = [float(h[k]) for k in ("CD1_1", "CD1_2", "CD2_1", "CD2_2")]
+    except (KeyError, TypeError, ValueError):
+        return None
+    det = abs(cd[0] * cd[3] - cd[1] * cd[2])
+    return math.sqrt(det) * 3600 if det else None
+
+
+def _focal_from_solve(f: Frame, known_um: float | None) -> float | None:
+    """Focal length from the solved image scale and the true pixel size - only when the header's pixel
+    size differs from the known one by more than 2 % (otherwise the header is right)."""
+    h = f.header or {}
+    header_um = _num(h.get("XPIXSZ"), None)
+    if not known_um or not header_um or abs(header_um - known_um) / known_um <= 0.02 or f.frame_type != "light":
+        return None
+    scale = _solved_scale(h)
+    if not scale:
+        return None
+    return round(206.265 * known_um * (f.binning or 1) / scale, 1)
+
+
 def _geometry(f: Frame) -> tuple[float, float, float] | None:
     """(arcsec/pixel, field width, field height in arcmin) from pixel size, binning and focal length."""
-    pix = (f.header or {}).get("XPIXSZ")
-    try:
-        pix = float(pix) if pix not in (None, "") else None
-    except (TypeError, ValueError):
-        pix = None
+    pix = _known_pixel_sizes_cache.get(_norm(f.camera)) or _num((f.header or {}).get("XPIXSZ"), None)
     if not pix or not f.focal or not f.width or not f.height:
         return None
     scale = 206.265 * pix * (f.binning or 1) / f.focal
     return scale, f.width * scale / 60, f.height * scale / 60
 
 
+_known_pixel_sizes_cache: dict[str, float] = {}
 SPREAD_WARN_DEG = 10.0
 
 

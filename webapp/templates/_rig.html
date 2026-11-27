@@ -10,22 +10,34 @@
 
 {% macro num(v, d=0) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% endif %}{% endmacro %}
 
-{# Optical data of a rig: focal length, focal ratio, image scale, field of view, sampling at the given seeing. #}
+{# Optical data of a rig: focal length, focal ratio, image scale, field of view, sampling at the given seeing.
+   With an optional corrector every value is given without / with it ("750 / 1500 mm"). #}
+{% macro _focal(r, f) %}{% set lo, hi = r.focal_range_for(f) %}{{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %}{% endmacro %}
+{% macro _ratio(r, f) %}{% set fr = r.f_ratio_range_for(f) %}{% if fr %}f/{{ num(fr[0], 1) }}{% if fr[1] != fr[0] %}–{{ num(fr[1], 1) }}{% endif %}{% else %}–{% endif %}{% endmacro %}
+{% macro _scale(r, f) %}{% set lo, hi = r.focal_range_for(f) %}{% set a, b = r.scale_at(hi), r.scale_at(lo) %}{{ num(a, 2) }}{% if b != a %}–{{ num(b, 2) }}{% endif %}{% endmacro %}
+{% macro _fov(r, f) %}{% set lo, hi = r.focal_range_for(f) %}{% set fv = r.fov_at(lo) %}{% if fv %}{{ num(fv[0]) }}′ × {{ num(fv[1]) }}′{% if hi != lo %}{% set fv2 = r.fov_at(hi) %} … {{ num(fv2[0]) }}′ × {{ num(fv2[1]) }}′{% endif %}{% else %}–{% endif %}{% endmacro %}
+{% macro _sampling(r, f, seeing) %}{% set lo, hi = r.focal_range_for(f) %}{% set px = seeing / r.scale_at(lo) %}{{ num(px, 1) }}{% if hi != lo %}–{{ num(seeing / r.scale_at(hi), 1) }}{% endif %} px/FWHM
+    <span class="pl-sampling {{ 'under' if px < 1.5 else 'over' if px > 3.5 else 'good' }}">{{ 'Unterabtastung' if px < 1.5 else 'Überabtastung' if px > 3.5 else 'gut' }}</span>{% endmacro %}
+
 {% macro rig_specs(r, seeing=2.5, drivers=none) -%}
-{%- set lo, hi = r.focal_range %}{% set fr = r.f_ratio_range %}
-{%- set s_lo, s_hi = r.scale_at(hi), r.scale_at(lo) %}
+{%- set fs = r.factors %}
+{%- set opt = fs|length > 1 %}
                 <dl class="pl-rig-specs">
-                    <div class="pl-spec"><dt>Brennweite</dt><dd>{{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm</dd></div>
-                    <div class="pl-spec"><dt>Öffnungsverh.</dt><dd>{% if fr %}f/{{ num(fr[0], 1) }}{% if fr[1] != fr[0] %}–{{ num(fr[1], 1) }}{% endif %}{% else %}–{% endif %}</dd></div>
-                    <div class="pl-spec"><dt>Bildmaßstab</dt><dd>{% if s_lo %}{{ num(s_lo, 2) }}{% if s_hi != s_lo %}–{{ num(s_hi, 2) }}{% endif %}″/px{% else %}<span class="text-body-secondary">Pixelgröße fehlt</span>{% endif %}</dd></div>
-                    <div class="pl-spec"><dt>Bildfeld</dt><dd>{% set fv = r.fov_at(lo) %}{% if fv %}{{ num(fv[0]) }}′ × {{ num(fv[1]) }}′{% if hi != lo %}{% set fv2 = r.fov_at(hi) %} … {{ num(fv2[0]) }}′ × {{ num(fv2[1]) }}′{% endif %}{% else %}–{% endif %}</dd></div>
-                    {% if s_lo %}{% set px_fwhm = seeing / s_lo %}
-                    <div class="pl-spec"><dt>Abtastung</dt><dd>{{ num(px_fwhm, 1) }} px/FWHM{% if hi != lo %}–{{ num(seeing / s_hi, 1) }}{% endif %}
-                        <span class="pl-sampling {{ 'under' if px_fwhm < 1.5 else 'over' if px_fwhm > 3.5 else 'good' }}">{{ 'Unterabtastung' if px_fwhm < 1.5 else 'Überabtastung' if px_fwhm > 3.5 else 'gut' }}</span></dd></div>{% endif %}
+                    <div class="pl-spec"><dt>Brennweite</dt><dd{% if opt %} title="ohne / mit {{ r.corrector.name }}"{% endif %}>{% for f in fs %}{% if not loop.first %} / {% endif %}{{ _focal(r, f) }}{% endfor %} mm</dd></div>
+                    <div class="pl-spec"><dt>Öffnungsverh.</dt><dd>{% for f in fs %}{% if not loop.first %} / {% endif %}{{ _ratio(r, f) }}{% endfor %}</dd></div>
+                    <div class="pl-spec"><dt>Bildmaßstab</dt><dd>{% if r.camera.pixel_um %}{% for f in fs %}{% if not loop.first %} / {% endif %}{{ _scale(r, f) }}{% endfor %}″/px{% else %}<span class="text-body-secondary">Pixelgröße fehlt</span>{% endif %}</dd></div>
+                    <div class="pl-spec"><dt>Bildfeld</dt><dd>{% for f in fs %}{% if not loop.first %} / {% endif %}{{ _fov(r, f) }}{% endfor %}</dd></div>
+                    {% if r.camera.pixel_um %}
+                    <div class="pl-spec"><dt>Abtastung</dt><dd>{% for f in fs %}{% if not loop.first %} / {% endif %}{{ _sampling(r, f, seeing) }}{% endfor %}</dd></div>{% endif %}
                     {% if r.mount %}<div class="pl-spec"><dt>Montierung</dt><dd>{{ r.mount.name }}</dd></div>
                     {% elif drivers and drivers.get(r.id) %}<div class="pl-spec"><dt>Montierung</dt><dd title="Treiber laut FITS-Header (TELESCOP) – Montierung im Rig eintragen für den Namen">{{ drivers[r.id] }}</dd></div>{% endif %}
                     {% if r.guide_camera %}<div class="pl-spec"><dt>Guiding</dt><dd>{{ r.guide_camera.name }}</dd></div>{% endif %}
                 </dl>
+{%- endmacro %}
+
+{# Components of a rig in one line; an optional corrector is marked. #}
+{% macro rig_parts(r) -%}
+{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% if r.factors|length > 1 %} <span class="pl-optional" title="Wird nur in einem Teil der Sessions verwendet – das Rig deckt beide Brennweiten ab">optional</span>{% endif %}{% endif %}
 {%- endmacro %}
 
 {# Generic rig image (no photo uploaded): inline so that its colours follow the light/dark theme. #}

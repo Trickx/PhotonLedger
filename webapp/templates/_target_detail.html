@@ -127,7 +127,7 @@
             {% else %}<span class="pl-rig-thumb pl-dataset-thumb">{{ rig_placeholder() }}</span>{% endif %}
             <div class="pl-dataset-main">
                 <strong>{% for x in d.rigs %}{% if not loop.first %} / {% endif %}{% if x.rig %}{{ rig_name(x) }}{% else %}<span class="text-body-secondary" title="Kein Rig passt zu Kamera und Brennweite – unter Ausrüstung oder auf der Session-Seite zuordnen">kein Rig</span>{% endif %}{% endfor %}</strong>
-                <span>{% if d.focal %}{{ d.focal }} mm{% else %}Brennweite unbekannt{% endif %} · {{ d.camera or 'Kamera unbekannt' }}{% if d.telescope %} · {{ d.telescope }}{% endif %}</span>
+                <span>{% if d.focal %}{{ d.focal }} mm{% if d.focal_header %} <i class="bi bi-info-circle" title="Korrigiert: im Header stehen {{ d.focal_header }} mm – aus dem Plate-Solve mit falscher Pixelgröße errechnet. Neu berechnet mit der Pixelgröße der Kamera unter „Rigs“."></i>{% endif %}{% else %}Brennweite unbekannt{% endif %} · {{ d.camera or 'Kamera unbekannt' }}{% if d.telescope %} · {{ d.telescope }}{% endif %}</span>
                 {% if d.scale %}<span class="pl-geo">{{ '%.2f'|format(d.scale)|replace('.', ',') }}″/px · {{ '%.0f'|format(d.fov_w) }}′ × {{ '%.0f'|format(d.fov_h) }}′</span>{% endif %}
             </div>
             <div class="pl-dataset-meta">

@@ -54,8 +54,7 @@ def candidates(rigs: list[Rig], camera: str | None, focal: float | None, tol: fl
         names = {_norm(r.camera.header_name), _norm(r.camera.name)} - {""}
         if _norm(camera) not in names or not focal:
             continue
-        lo, hi = r.focal_range
-        if lo * (1 - tol) <= focal <= hi * (1 + tol):
+        if r.factor_for(focal, tol) is not None:            # with or (if optional) without the corrector
             out.append(r)
     return out
 
@@ -221,7 +220,7 @@ def rig_statistics(tol: float) -> tuple[list[dict], list[dict]]:
 
 @main.route("/rigs")
 def rigs_page():
-    edit = {k: request.args.get(k, type=int) for k in ("camera", "optic", "corrector", "mount", "rig")}
+    edit = {k: request.args.get(k, type=int) for k in ("camera", "optic", "corrector", "mount", "rig", "copy")}
     all_cams = db.session.scalars(select(Camera).order_by(Camera.name)).all()
     cams = [c for c in all_cams if c.role != "guide"]
     guide_cams = [c for c in all_cams if c.role == "guide"]
@@ -235,18 +234,34 @@ def rigs_page():
     drivers = mount_drivers(res_)
     header_guides = _header_guide_cameras()
     known = {_norm(c.header_name) for c in all_cams} | {_norm(c.name) for c in all_cams}
+    # rigs grouped by their optic (e.g. one telescope with several cameras), with the totals of the group
+    stats = {st["rig"].id: st for st in rig_statistics(current_app.config["FOCAL_TOLERANCE"])[0]}
+    groups: dict[int, dict] = {}
+    for r in rigs:
+        g = groups.setdefault(r.optic_id, dict(optic=r.optic, rigs=[], seconds=0.0, lights=0, sessions=set(), targets=set()))
+        g["rigs"].append(r)
+        st = stats.get(r.id)
+        if st:
+            g["seconds"] += st["seconds"]
+            g["lights"] += st["lights"]
+            g["sessions"] |= st["sessions"]
+            g["targets"] |= st["targets"]
+    rig_groups = sorted(groups.values(), key=lambda g: (not any(r.active for r in g["rigs"]), -g["seconds"], g["optic"].name))
+    for g in rig_groups:
+        g["sessions"], g["targets"] = len(g["sessions"]), len(g["targets"])
     return render_template(
-        "rigs.html", cameras=cams, guide_cameras=guide_cams, optics=optics, correctors=corrs, mounts=mounts, rigs=rigs, edit=edit,
+        "rigs.html", rig_groups=rig_groups, cameras=cams, guide_cameras=guide_cams, optics=optics, correctors=corrs, mounts=mounts, rigs=rigs, edit=edit,
         cur=dict(camera=db.session.get(Camera, edit["camera"]) if edit["camera"] else None,
                  optic=db.session.get(Optic, edit["optic"]) if edit["optic"] else None,
                  corrector=db.session.get(Corrector, edit["corrector"]) if edit["corrector"] else None,
                  mount=db.session.get(Mount, edit["mount"]) if edit["mount"] else None,
-                 rig=db.session.get(Rig, edit["rig"]) if edit["rig"] else None),
+                 rig=db.session.get(Rig, edit["rig"]) if edit["rig"] else None,
+                 source=db.session.get(Rig, edit["copy"]) if edit["copy"] else None),   # duplicate
         new_header_cams=[h for h in header_cams if _norm(h["name"]) not in known],
         new_header_guides=[h for h in header_guides if _norm(h["name"]) not in known],
         fill_guides=[c for c in guide_cams if not c.pixel_um and _norm(c.header_name or c.name) in
                      {_norm(h["name"]) for h in header_guides if h["pixel_um"]}],
-        guides=guides, drivers=drivers, smart_presets=SMART_PRESETS, smart_found=smart_candidates(rigs), optic_kinds=OPTIC_KINDS, corrector_kinds=CORRECTOR_KINDS, mount_kinds=MOUNT_KINDS, seeing=float(request.args.get("seeing", 2.5)))
+        guides=guides, drivers=drivers, mergeable=mergeable_rigs(rigs), smart_presets=SMART_PRESETS, smart_found=smart_candidates(rigs), optic_kinds=OPTIC_KINDS, corrector_kinds=CORRECTOR_KINDS, mount_kinds=MOUNT_KINDS, seeing=float(request.args.get("seeing", 2.5)))
 
 
 def _header_cameras() -> list[dict]:
@@ -458,6 +473,44 @@ def create_smart_rig():
     return redirect(url_for("main.rigs_page") + f"#rig-{rig.id}")
 
 
+def mergeable_rigs(rigs) -> list[tuple[Rig, Rig]]:
+    """Pairs of rigs that differ only in the corrector (one without, one with it): (keep, drop)."""
+    out = []
+    for a in rigs:
+        for b in rigs:
+            if a.id != b.id and a.corrector_id and not b.corrector_id and (a.camera_id, a.optic_id) == (b.camera_id, b.optic_id) \
+                    and (a.mount_id == b.mount_id or not a.mount_id or not b.mount_id) \
+                    and (a.guide_camera_id == b.guide_camera_id or not a.guide_camera_id or not b.guide_camera_id):
+                out.append((a, b))
+    return out
+
+
+@main.post("/rigs/merge/<int:keep_id>/<int:drop_id>")
+def merge_rigs(keep_id: int, drop_id: int):
+    """Merge a rig without corrector into the same rig with it: the corrector becomes optional; manual
+    assignments, session choices, photo, mount and guiding move over."""
+    keep, drop = db.session.get(Rig, keep_id) or abort(404), db.session.get(Rig, drop_id) or abort(404)
+    if (keep, drop) not in mergeable_rigs([keep, drop]):
+        abort(400, "Diese Rigs unterscheiden sich nicht nur im Extender")
+    keep.corrector_optional = True
+    keep.mount_id = keep.mount_id or drop.mount_id
+    keep.guide_camera_id = keep.guide_camera_id or drop.guide_camera_id
+    keep.active = keep.active or drop.active
+    if not keep.photo and drop.photo:
+        keep.photo, drop.photo = drop.photo, None
+    for m in db.session.scalars(select(RigMatch).where(RigMatch.rig_id == drop.id)):
+        m.rig_id = keep.id
+    for o in db.session.scalars(select(RigSessionOverride).where(RigSessionOverride.rig_id == drop.id)):
+        o.rig_id = keep.id
+    _remove_photo(drop)
+    name = drop.name
+    db.session.delete(drop)
+    db.session.commit()
+    refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
+    flash(f"„{name}“ in „{keep.name}“ zusammengefasst – {keep.corrector.name} ist jetzt optional.", "success")
+    return redirect(url_for("main.rigs_page") + f"#rig-{keep.id}")
+
+
 @main.post("/rigs/mount")
 def save_mount():
     m = db.session.get(Mount, request.form.get("id", type=int)) if request.form.get("id") else Mount()
@@ -478,6 +531,7 @@ def save_rig():
     r.camera_id = request.form.get("camera_id", type=int) or abort(400, "Kamera fehlt")
     r.optic_id = request.form.get("optic_id", type=int) or abort(400, "Optik fehlt")
     r.corrector_id = request.form.get("corrector_id", type=int) or None
+    r.corrector_optional = bool(r.corrector_id and request.form.get("corrector_optional"))
     r.mount_id = request.form.get("mount_id", type=int) or None
     r.guide_camera_id = request.form.get("guide_camera_id", type=int) or None
     r.active = bool(request.form.get("active"))

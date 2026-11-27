@@ -1,5 +1,6 @@
 """End to end: a tiny fake archive -> indexer -> every page renders."""
 import os
+from datetime import datetime
 
 import pytest
 from PIL import Image
@@ -586,7 +587,21 @@ def test_archive_not_mounted(app):
         assert c.get(f"/sad/map/{fid}/Size").status_code == 404      # never rendered, source missing
     finally:
         shutil.move(arc + ".unmounted", arc)
+    # mount fixed, a new run is going on: the old error is no longer shown (but is again if that run died)
+    from webapp.indexer import run_lock
+    from webapp.models import IndexRun
     with app.app_context():
+        r = IndexRun(started=datetime(2026, 11, 27, 11, 0), phase="scan")
+        db.session.add(r)
+        db.session.commit()
+        rid = r.id
+    with run_lock(app.config) as got:
+        assert got
+        assert "Letzter Indexlauf fehlgeschlagen" not in c.get("/").data.decode()
+    assert "Letzter Indexlauf fehlgeschlagen" in c.get("/").data.decode()        # lock gone, run never finished
+    with app.app_context():
+        db.session.delete(db.session.get(IndexRun, rid))
+        db.session.commit()
         assert run_once(app).phase == "done"
     assert "Letzter Indexlauf fehlgeschlagen" not in c.get("/").data.decode()   # gone after a good run
     assert "erreichbar" in c.get("/status/state").data.decode()
@@ -1145,3 +1160,45 @@ def test_wbpp_calibration(app):
     assert card.count("nicht verwendet") == 1                         # bias
     overview = c.get("/sessions").data.decode()
     assert "laut WBPP kalibriert mit masterFlat_BIN-1_FILTER-NoFilter.xisf" in overview
+
+
+def test_focal_from_plate_solve(app):
+    """ASIAIR derives FOCALLEN from its plate solve with the pixel size it knows; if that is wrong (7D Mark II:
+    4.29 instead of 4.1 um) the focal length is recomputed with the pixel size of the camera in the rigs."""
+    import math
+    from pathlib import Path
+
+    from webapp.archive import checks, derive
+    from webapp.models import Camera
+    scale = 206.265 * 4.1 / 756 / 3600                                  # degrees per pixel, true 756 mm
+    sess = Path(app.config["ARCHIVE_PATH"]) / "M13 (Hercules)" / "2026-04-22"
+    for i in range(2):
+        _fits(sess / "Lights" / f"m{i}.fit", IMAGETYP="Light", EXPTIME=120.0, **{"DATE-OBS": f"2026-04-22T23:0{i}:00"},
+              INSTRUME="Canon EOS 7D MarkII", FOCALLEN=792.0, XPIXSZ=4.29, NAXIS1=5496, NAXIS2=3670,
+              CD1_1=scale * math.cos(0.3), CD1_2=-scale * math.sin(0.3), CD2_1=scale * math.sin(0.3), CD2_2=scale * math.cos(0.3),
+              RA=250.4, DEC=36.46)
+    # later images without a solve of their own keep the 792 mm of the last solve; others were never solved
+    _fits(sess / "Lights" / "m2.fit", IMAGETYP="Light", EXPTIME=120.0, **{"DATE-OBS": "2026-04-22T23:05:00"},
+          INSTRUME="Canon EOS 7D MarkII", FOCALLEN=792.0, XPIXSZ=4.29, NAXIS1=5496, NAXIS2=3670, RA=250.4, DEC=36.46)
+    _fits(sess / "Lights" / "m3.fit", IMAGETYP="Light", EXPTIME=120.0, **{"DATE-OBS": "2026-04-22T23:06:00"},
+          INSTRUME="Canon EOS 7D MarkII", FOCALLEN=600.0, XPIXSZ=4.29, NAXIS1=5496, NAXIS2=3670, RA=250.4, DEC=36.46)
+    _fits(sess / "Flats" / "f.fit", IMAGETYP="Flat", EXPTIME=0.5, **{"DATE-OBS": "2026-04-23T04:00:00"},
+          INSTRUME="Canon EOS 7D MarkII", FOCALLEN=792.0, XPIXSZ=4.29, NAXIS1=5496, NAXIS2=3670)
+    with app.app_context():
+        run_once(app)
+        f = db.session.query(Frame).filter(Frame.path.endswith("m0.fit")).one()
+        assert f.focal == 792.0                                         # pixel size unknown: header kept
+        db.session.add(Camera(name="Canon 7D Mark II", header_name="Canon EOS 7D MarkII", pixel_um=4.1))
+        db.session.commit()
+        derive.derive(app.config)
+        db.session.commit()
+        f = db.session.query(Frame).filter(Frame.path.endswith("m0.fit")).one()
+        assert abs(f.focal - 756) < 0.5 and f.header["FOCALLEN"] in ("792.", "792.0", 792.0, "792")
+        assert abs(db.session.query(Frame).filter(Frame.path.endswith("m2.fit")).one().focal - 756) < 0.5
+        assert db.session.query(Frame).filter(Frame.path.endswith("m3.fit")).one().focal == 600.0   # set by hand
+        assert abs(db.session.query(Frame).filter(Frame.path.endswith("M13 (Hercules)/2026-04-22/Flats/f.fit")).one().focal - 756) < 0.5   # flats too
+        checks.run(app.config)
+        assert not db.session.query(Issue).filter_by(code="flat_focal", session_root="M13 (Hercules)/2026-04-22").count()
+        s = db.session.query(Session).filter_by(root="M13 (Hercules)/2026-04-22").one()
+        d = next(d for d in s.datasets if d["focal"] and d["focal"] > 700)
+        assert d["focal_header"] == 792 and abs(d["scale"] - 1.119) < 0.01 and d["lights"] == 3

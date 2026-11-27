@@ -83,6 +83,11 @@ def _globals():
                                       .order_by(IndexRun.id.desc()).limit(1)).first()
             if not last or last.phase != "failed":
                 return None
+            # a newer run is going on (e.g. after the mount was fixed): its result decides, not the old error
+            from webapp import indexer
+            newer = db.session.scalar(select(func.max(IndexRun.id)).where(IndexRun.finished.is_(None)))
+            if newer and newer > last.id and indexer.is_running(current_app.config):
+                return None
             ok = db.session.scalars(select(IndexRun).where(IndexRun.phase == "done")
                                     .order_by(IndexRun.id.desc()).limit(1)).first()
             return dict(message=last.message, when=last.finished, last_ok=ok.finished if ok else None)
@@ -125,6 +130,8 @@ def _datasets(sessions: list[Session], res=None) -> list[dict]:
             if res is not None:                # rigs of this data set (a session may have chosen another)
                 rig, how = res.resolve(s.root, d["camera"], d["focal"])
                 a["rigs"].setdefault(rig.id if rig else None, dict(rig=rig, how=how, d=d))
+            if d.get("focal_header"):
+                a["focal_header"] = d["focal_header"]
             if d.get("scale") and not a["scale"]:
                 a["scale"], a["fov_w"], a["fov_h"] = d["scale"], d["fov_w"], d["fov_h"]
             a["seconds"] += d["seconds"]

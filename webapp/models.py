@@ -356,6 +356,8 @@ class Rig(db.Model):
     notes: Mapped[str | None] = mapped_column(Text)
     photo: Mapped[str | None] = mapped_column(String(200))     # uploaded photo, path below DATA_PATH
     mount_id: Mapped[int | None] = mapped_column(ForeignKey("mount.id"), index=True)
+    # the corrector (e.g. a Barlow / extender) is used only in some sessions: the rig covers both focal lengths
+    corrector_optional: Mapped[bool] = mapped_column(default=False, server_default="0")
     guide_camera_id: Mapped[int | None] = mapped_column(ForeignKey("camera.id"), index=True)   # optional
 
     camera: Mapped[Camera] = relationship(foreign_keys=[camera_id])
@@ -369,19 +371,40 @@ class Rig(db.Model):
         return self.corrector.factor if self.corrector else 1.0
 
     @property
-    def focal_range(self) -> tuple[float, float]:
-        lo = self.optic.focal_mm * self.factor
-        hi = (self.optic.focal_max_mm or self.optic.focal_mm) * self.factor
+    def factors(self) -> list[float]:
+        """Corrector factors the rig is used with: [1.0, factor] if the corrector is optional."""
+        if self.corrector and self.corrector_optional and self.factor != 1.0:
+            return [1.0, self.factor]
+        return [self.factor]
+
+    def focal_range_for(self, factor: float) -> tuple[float, float]:
+        lo = self.optic.focal_mm * factor
+        hi = (self.optic.focal_max_mm or self.optic.focal_mm) * factor
         return lo, hi
+
+    def f_ratio_range_for(self, factor: float) -> tuple[float, float] | None:
+        o = self.optic
+        if o.aperture_mm:
+            lo, hi = self.focal_range_for(factor)
+            return lo / o.aperture_mm, hi / o.aperture_mm
+        if o.f_number:
+            return o.f_number * factor, (o.f_number_max or o.f_number) * factor
+        return None
+
+    @property
+    def focal_range(self) -> tuple[float, float]:
+        return self.focal_range_for(self.factor)
 
     @property
     def f_ratio_range(self) -> tuple[float, float] | None:
-        o = self.optic
-        if o.aperture_mm:
-            lo, hi = self.focal_range
-            return lo / o.aperture_mm, hi / o.aperture_mm
-        if o.f_number:
-            return o.f_number * self.factor, (o.f_number_max or o.f_number) * self.factor
+        return self.f_ratio_range_for(self.factor)
+
+    def factor_for(self, focal: float | None, tol: float = 0.03) -> float | None:
+        """Which factor a data set with this focal length used (None if none fits)."""
+        for f in self.factors:
+            lo, hi = self.focal_range_for(f)
+            if focal and lo * (1 - tol) <= focal <= hi * (1 + tol):
+                return f
         return None
 
     def scale_at(self, focal: float) -> float | None:

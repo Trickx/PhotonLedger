@@ -13,6 +13,11 @@ Versionsnummern nach `MAJOR.MINOR.PATCH`; die aktuelle steht in [`VERSION`](VERS
   über `ARCHIVE_URL`; mit Login nur nach Anmeldung (`DOWNLOAD_PUBLIC`).
 - Versionen im Vollbild mit Zoom und Blättern; `Notizen.md` in Session- und Zielordnern.
 - Einheitliche Karten auf der Session-Seite; Kachel „Kalibriert“ im Katalog entfernt.
+- Rigs: Flattener/Reducer/Extender optional (ein Rig für beide Brennweiten, Paare zusammenfassen),
+  Gruppierung nach Optik mit Summen, Duplizieren.
+- Brennweite aus Plate-Solve mit der Pixelgröße der Kamera korrigiert (ASIAIR mit falscher Pixelgröße,
+  z. B. Canon 7D Mark II: 792 → 756 mm) – für Lights und die Kalibrierbilder derselben Nacht.
+- Das Fehlerband eines fehlgeschlagenen Indexlaufs verschwindet, solange ein neuerer Lauf aktiv ist.
 
 ## 1.0.0 – 2026-11-26
 

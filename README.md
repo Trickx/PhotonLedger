@@ -40,6 +40,13 @@ Dateien im WBPP-Ordner `master/` (Bearbeitungsschritte gehören daneben nach
 `Processing/`). Ordner mit mehr als 30 Bildern (Burst-Serien,
 registrierte Einzelbilder) zählen nicht als Versionen.
 
+**Brennweite aus dem Plate-Solve.** ASIAIR rechnet `FOCALLEN` aus dem gelösten Bildmaßstab und der
+Pixelgröße, die sie für die Kamera kennt – ist diese falsch (z. B. 4,29 statt 4,1 µm bei der Canon 7D
+Mark II), stimmt die Brennweite nicht (792 statt 756 mm). Weicht `XPIXSZ` um mehr als 2 % von der Pixelgröße
+der Kamera unter *Rigs* ab, rechnet Photon Ledger die Brennweite mit dieser neu (aus der WCS-Lösung im Header);
+Bilder ohne eigene Lösung mit demselben Header-Wert bekommen dieselbe Korrektur. Der Katalog markiert solche
+Brennweiten mit einem Info-Symbol, der Header bleibt unverändert.
+
 Brennweiten einer Kamera, die weniger als 3 % voneinander abweichen
 (`FOCAL_TOLERANCE`), gelten als dieselbe Optik – z. B. 751,9 … 756 mm → *755 mm*.
 
@@ -134,7 +141,10 @@ Unter *Ausrüstung › Rigs verwalten* werden Komponenten angelegt – Kameras
 (auch direkt aus den FITS-Headern mit Pixel- und Bildgröße), Optiken
 (Teleskop, Festbrennweite, Zoomobjektiv mit Brennweitenbereich) und
 Flattener/Reducer/Extender (Faktor), Montierungen (Art, Traglast) – und zu Rigs kombiniert;
-optional mit Guiding-Kamera (aus der Kameraliste). **Smart-Teleskope** (DWARF 3, DWARF II, Seestar S50/S30,
+optional mit Guiding-Kamera (aus der Kameraliste). Ein Flattener/Reducer/Extender kann als **optional** markiert werden
+(z. B. eine Barlow, die nur in manchen Nächten im Einsatz ist): Das Rig deckt dann beide Brennweiten ab
+und zeigt alle Werte als „ohne / mit“; zwei Rigs, die sich nur darin unterscheiden, fasst die Seite *Rigs*
+auf Klick zusammen. **Smart-Teleskope** (DWARF 3, DWARF II, Seestar S50/S30,
 Vespera, Vespera II, Stellina) lassen sich mit einem Klick als Rig anlegen – Kamera, Optik und
 integrierte Montierung entstehen zusammen; findet Photon Ledger ein solches Gerät in den FITS-Headern,
 schlägt die Seite *Rigs* das von selbst vor. Daraus ergeben
