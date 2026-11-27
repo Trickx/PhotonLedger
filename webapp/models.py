@@ -125,6 +125,11 @@ class Version(db.Model):
     def filename(self) -> str:
         return self.path.rsplit("/", 1)[-1]
 
+    @property
+    def is_video(self) -> bool:
+        """Videos are played by the browser (no thumbnail is rendered on the server)."""
+        return "." + self.path.rsplit(".", 1)[-1].lower() in (".mp4", ".m4v", ".mov", ".webm")
+
 
 class Intermediate(db.Model):
     """A FITS/XISF file in a processing folder (stack, master, PixInsight step). Not read, only listed."""

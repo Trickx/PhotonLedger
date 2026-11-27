@@ -1202,3 +1202,27 @@ def test_focal_from_plate_solve(app):
         s = db.session.query(Session).filter_by(root="M13 (Hercules)/2026-04-22").one()
         d = next(d for d in s.datasets if d["focal"] and d["focal"] > 700)
         assert d["focal_header"] == 792 and abs(d["scale"] - 1.119) < 0.01 and d["lights"] == 3
+
+
+def test_video_versions(app):
+    """MP4/MOV/WebM results are versions that the browser plays (no thumbnail on the server); videos next to
+    the raw data are captures and ignored."""
+    from pathlib import Path
+    target = Path(app.config["ARCHIVE_PATH"]) / "Solar Eclipse" / "2026-08-12"
+    (target / "Finals").mkdir(parents=True)
+    (target / "Finals" / "SoFi_Siril.mp4").write_bytes(b"\0\0\0\x18ftypmp42" + b"\0" * 5000)
+    _light(target / "Lights" / "s.fit", "2026-08-12T17:00:00", ra=140.0, dec=15.0)
+    (target / "Lights" / "capture.mp4").write_bytes(b"\0" * 100)
+    with app.app_context():
+        run_once(app)
+        v = db.session.query(Version).filter(Version.path.endswith("SoFi_Siril.mp4")).one()
+        assert v.is_video and v.error is None and v.thumb is None
+        assert not db.session.query(Version).filter(Version.path.endswith("capture.mp4")).count()
+        vid, tid = v.id, v.target_id
+    c = app.test_client()
+    page = c.get(f"/target/{tid}", headers={"HX-Request": "true"}).data.decode()
+    assert f'data-video="/version/{vid}/video"' in page and "pl-version-play" in page
+    assert f'data-cover="/target/{tid}/cover/{vid}"' not in page              # a video is no cover image
+    r = c.get(f"/version/{vid}/video", headers={"Range": "bytes=0-99"})
+    assert r.status_code == 206 and r.mimetype == "video/mp4" and len(r.data) == 100
+    assert "Vorschauen offen" in c.get("/status").data.decode()

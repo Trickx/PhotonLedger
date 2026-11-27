@@ -70,8 +70,8 @@ def thumb_name(rel_path: str, kind: str) -> str:
 
 def render(cfg: dict, limit: int | None = None) -> int:
     data = Path(cfg["DATA_PATH"])
-    todo = db.session.scalars(
-        select(Version).where(Version.thumb.is_(None), Version.error.is_(None))).all()
+    todo = [v for v in db.session.scalars(select(Version).where(Version.thumb.is_(None), Version.error.is_(None)))
+            if not v.is_video]                       # videos: the browser shows their first frame
     done = 0
     for v in todo[:limit] if limit else todo:
         try:

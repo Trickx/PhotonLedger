@@ -18,6 +18,7 @@ Versionsnummern nach `MAJOR.MINOR.PATCH`; die aktuelle steht in [`VERSION`](VERS
 - Brennweite aus Plate-Solve mit der Pixelgröße der Kamera korrigiert (ASIAIR mit falscher Pixelgröße,
   z. B. Canon 7D Mark II: 792 → 756 mm) – für Lights und die Kalibrierbilder derselben Nacht.
 - Das Fehlerband eines fehlgeschlagenen Indexlaufs verschwindet, solange ein neuerer Lauf aktiv ist.
+- Videos (MP4, MOV, M4V, WebM) als Versionen: im Katalog und in der Vollbild-Ansicht abspielbar.
 
 ## 1.0.0 – 2026-11-26
 

@@ -227,7 +227,7 @@ def _detail(t: Target) -> dict:
     datasets = _datasets(sessions, res)
     with_lights = [s for s in sessions if s.lights]
     frames_total = sum(s.lights + s.flats + s.darks + s.biases + s.darkflats for s in sessions)
-    versions = sorted([v for v in t.versions if v.thumb], key=lambda v: -v.mtime)
+    versions = sorted([v for v in t.versions if v.thumb or v.is_video], key=lambda v: -v.mtime)
     broken = [v for v in t.versions if v.error]
     from webapp.main.phd_view import guiding_status
     return dict(
@@ -644,7 +644,8 @@ def status():
     frame_errors = db.session.scalars(select(Frame).where(Frame.error.is_not(None)).limit(200)).all()
     version_errors = db.session.scalars(select(Version).where(Version.error.is_not(None)).limit(200)).all()
     counts = dict(db.session.execute(select(Frame.frame_type, func.count()).group_by(Frame.frame_type)).all())
-    pending = db.session.scalar(select(func.count()).select_from(Version).where(Version.thumb.is_(None), Version.error.is_(None)))
+    pending = sum(1 for v in db.session.scalars(select(Version).where(Version.thumb.is_(None), Version.error.is_(None)))
+                  if not v.is_video)
     ignored = _kind_count(Frame, FILE_KINDS["ignored"][2])
     inter_total = _kind_count(Intermediate, None)
     inter_bad = _misplaced_intermediates() + ignored

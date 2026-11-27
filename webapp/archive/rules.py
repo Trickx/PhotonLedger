@@ -29,6 +29,7 @@ XISF_EXT = {".xisf"}
 RAW_EXT = {".raf", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2"}
 FRAME_EXT = FITS_EXT | XISF_EXT | RAW_EXT
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+VIDEO_EXT = {".mp4", ".m4v", ".mov", ".webm"}   # results as video (e.g. an eclipse time-lapse); not raw captures
 
 FRAME_DIRS = {
     "lights": "light", "light": "light",
@@ -182,7 +183,7 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
     ext = p.suffix.lower()
     if p.name.startswith("."):
         return None
-    if ext not in FRAME_EXT and ext not in IMAGE_EXT and ext not in WBPP_EXT:
+    if ext not in FRAME_EXT and ext not in IMAGE_EXT and ext not in WBPP_EXT and ext not in VIDEO_EXT:
         return None
 
     parts = list(p.parts[:-1])
@@ -216,6 +217,9 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
     if wbpp_step:
         # calibrated / registered / debayered … frames, local normalization, drizzle data
         return Classified("intermediate", target_folder, None)
+    if ext in VIDEO_EXT:
+        # a video next to the raw data (Lights/…) is a capture, not a result
+        return None if frame_type is not None else Classified("version", target_folder, None)
     if ext in IMAGE_EXT:
         if frame_type is not None:      # e.g. JPG lights of a solar eclipse: not a version
             return None

@@ -179,3 +179,18 @@ def download_version(vid: int):
     if full is None or not full.is_file():
         abort(404)
     return send_file(full, as_attachment=True, download_name=v.path.rsplit("/", 1)[-1])
+
+
+VIDEO_TYPES = {"mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"}
+
+
+@main.route("/version/<int:vid>/video")
+def stream_video(vid: int):
+    """A video version for the player (range requests, so it can be skipped through without loading all)."""
+    v = db.session.get(Version, vid) or abort(404)
+    full = archives.resolve(current_app.config, v.path)
+    if not v.is_video or full is None or not full.is_file():
+        abort(404)
+    return send_file(full, mimetype=VIDEO_TYPES.get(v.path.rsplit(".", 1)[-1].lower(), "video/mp4"),
+                     conditional=True, max_age=3600)
+

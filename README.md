@@ -21,6 +21,7 @@ Ausführlich mit Beispielen für eine und mehrere Sessions je Objekt: **[docs/or
 | `…/2026-05-25-100/*.fit` (ohne Lights-Ordner) | Session, Bildtyp aus `IMAGETYP` |
 | `Lights/REJECTED`, `Flats/Rejected` | aussortiert, zählt nicht zur Belichtung |
 | `Finals/`, `Processing/`, `PI*/`, `master*/`, `DXO/` | JPG/PNG/TIFF = **Versionen**, FITS/XISF = Zwischenstände (ignoriert) |
+| `…/Finals/*.mp4` (auch MOV, M4V, WebM) | Video-**Version**, im Katalog abspielbar (Videos in `Lights/` = Rohaufnahmen, ignoriert) |
 | `M42` und `M42 (Orion Nebula)` | ein Ziel (gemeinsame Katalognummer) |
 | `2026/M42 (…)/…` (alte Struktur mit Jahresordner) | wird erkannt, aber als *Zielordner liegt in einem Jahresordner* gemeldet |
 | `M66, M65, NGC (Leo-Triplett)` und `M65, M66, NGC 3628 (Leo-Triplett)` | ein Ziel |

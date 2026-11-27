@@ -3,12 +3,18 @@
 {% from "_cal.html" import fdb %}
 {% from "_phd_dot.html" import phd_dot, night_dot %}
 {% if is_htmx %}<title>{{ t.name }} · Photon Ledger</title>{% endif %}
-<div class="pl-hero {% if not cover %}pl-hero-empty{% endif %}">
+<div class="pl-hero {% if not cover and not (versions and versions[0].is_video) %}pl-hero-empty{% endif %}">
     {% if cover %}
         <a href="{{ url_for('main.media', kind='previews', vid=cover.id) }}" data-pl-open="v{{ cover.id }}" title="Im Vollbild ansehen">
             <img src="{{ url_for('main.media', kind='previews', vid=cover.id) }}" alt="{{ cover.filename }}">
         </a>
         <span class="pl-hero-caption">{{ cover.filename }}</span>
+    {% elif versions and versions[0].is_video %}{% set vv = versions[0] %}
+        <a href="{{ url_for('main.stream_video', vid=vv.id) }}" data-pl-open="v{{ vv.id }}" title="Im Vollbild abspielen">
+            <video src="{{ url_for('main.stream_video', vid=vv.id) }}#t=1" preload="metadata" muted playsinline></video>
+            <i class="bi bi-play-circle-fill pl-version-play"></i>
+        </a>
+        <span class="pl-hero-caption">{{ vv.filename }}</span>
     {% else %}
         <i class="bi bi-image"></i><span>Noch keine bearbeitete Version</span>
     {% endif %}
@@ -46,13 +52,15 @@
         {% for v in versions %}
         <div class="pl-version-wrap">
         <button class="pl-version {% if cover and v.id == cover.id %}active{% endif %}" type="button"
-                id="v{{ v.id }}" data-pl-view="versions" data-full="{{ url_for('main.media', kind='previews', vid=v.id) }}"
+                id="v{{ v.id }}" data-pl-view="versions" {% if v.is_video %}data-video="{{ url_for('main.stream_video', vid=v.id) }}"{% else %}data-full="{{ url_for('main.media', kind='previews', vid=v.id) }}"{% endif %}
                 data-name="{{ v.filename }}" data-info="{% if v.width %}{{ v.width }} × {{ v.height }} px · {% endif %}{{ v.size|filesize }}"
                 {% if may_download %}data-download="{{ url_for('main.download_version', vid=v.id) }}"{% endif %}
-                {% if may_change %}data-cover="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}"{% endif %}
+                {% if may_change and not v.is_video %}data-cover="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}"{% endif %}
                 {% if cover and v.id == cover.id %}data-is-cover="1"{% endif %}
                 title="{{ v.path }} – im Vollbild ansehen">
-            <img loading="lazy" src="{{ url_for('main.media', kind='thumbs', vid=v.id) }}" alt="{{ v.filename }}">
+            {% if v.is_video %}<video src="{{ url_for('main.stream_video', vid=v.id) }}#t=1" preload="metadata" muted playsinline aria-label="{{ v.filename }}"></video>
+            <i class="bi bi-play-circle-fill pl-version-play"></i>
+            {% else %}<img loading="lazy" src="{{ url_for('main.media', kind='thumbs', vid=v.id) }}" alt="{{ v.filename }}">{% endif %}
             {% if cover and v.id == cover.id %}<i class="bi bi-check-circle-fill pl-version-check"></i>{% endif %}
         </button>
         {% if may_download %}<a class="pl-version-dl" href="{{ url_for('main.download_version', vid=v.id) }}" title="{{ v.filename }} herunterladen ({{ v.size|filesize }})"
