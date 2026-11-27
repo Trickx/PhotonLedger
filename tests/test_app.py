@@ -1226,3 +1226,53 @@ def test_video_versions(app):
     r = c.get(f"/version/{vid}/video", headers={"Range": "bytes=0-99"})
     assert r.status_code == 206 and r.mimetype == "video/mp4" and len(r.data) == 100
     assert "Vorschauen offen" in c.get("/status").data.decode()
+
+
+def _jpg_light(path, when, model="DWARF 3"):
+    """A JPG sub frame with EXIF like a DWARF burst image."""
+    from PIL import Image
+    from PIL.TiffImagePlugin import IFDRational as Fraction
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ex = Image.Exif()
+    ex[0x010F], ex[0x0110] = "DWARFLAB", model                      # Make, Model
+    ifd = ex.get_ifd(0x8769)
+    ifd[0x9003] = when                                             # DateTimeOriginal
+    ifd[0x829A] = Fraction(1, 1000)                                # ExposureTime
+    ifd[0x920A] = Fraction(150, 1)                                 # FocalLength
+    Image.new("RGB", (384, 216), (200, 120, 80)).save(path, "JPEG", exif=ex)
+
+
+def test_jpg_lights(app):
+    """JPGs in a Lights folder are lights (EXIF: time, exposure, camera, focal length); mixed with FITS/RAW in
+    the same folder they are reported."""
+    from pathlib import Path
+    sess = Path(app.config["ARCHIVE_PATH"]) / "Solar Eclipse" / "2026-08-12"
+    for i in range(3):
+        _jpg_light(sess / "Lights" / f"2026-08-12_19-0{i}-22.jpg", f"2026:08:12 19:0{i}:22")
+    root = "Solar Eclipse/2026-08-12"
+    with app.app_context():
+        run_once(app)
+        s = db.session.query(Session).filter_by(root=root).one()
+        assert s.lights == 3 and abs(s.exposure_s - 0.003) < 1e-6
+        f = db.session.query(Frame).filter(Frame.path.endswith("19-00-22.jpg")).one()
+        assert f.camera == "DWARF 3" and f.focal == 150 and f.width == 384 and f.frame_type == "light"
+        assert not db.session.query(Version).filter(Version.path.startswith(root + "/Lights/")).count()
+        assert not db.session.query(Issue).filter_by(code="mixed_formats").count()
+    _light(sess / "Lights" / "raw.fit", "2026-08-12T19:30:00", camera="DWARF 3", focal=150.0)
+    with app.app_context():
+        run_once(app)
+        w = db.session.query(Issue).filter_by(code="mixed_formats", session_root=root).one()
+        assert w.severity == "warning" and "JPG (3)" in w.message and "FIT (1)" in w.message
+
+
+def test_session_filters(app):
+    """The sessions page filters by text, year, rig, filter and state; the count says how many are shown."""
+    c = app.test_client()
+    page = c.get("/sessions").data.decode()
+    assert 'name="zustand"' in page and "Filter zurücksetzen" not in page
+    moon = c.get("/sessions?q=mineral+moon").data.decode()
+    assert "Mineral Moon" in moon and "Leo-Triplett" not in moon and "Filter zurücksetzen" in moon
+    assert "Keine Session passt" in c.get("/sessions?jahr=2019").data.decode()
+    no_log = c.get("/sessions?zustand=ohne_log").data.decode()
+    assert "/2026-03-22" not in no_log.split('id="session-table"')[1]      # Leo 22.03. has an ASIAIR log
+    assert "Keine Session passt" not in c.get("/sessions?rig=none").data.decode()   # no rigs defined at all

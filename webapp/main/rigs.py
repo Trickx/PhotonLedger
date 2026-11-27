@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import shutil
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -537,6 +538,8 @@ def save_rig():
     r.active = bool(request.form.get("active"))
     r.notes = request.form.get("notes") or None
     db.session.add(r)
+    db.session.flush()
+    _update_photo(r)
     db.session.commit()
     refresh_rig_issues(current_app.config["FOCAL_TOLERANCE"])
     flash(f"Rig „{r.name}“ gespeichert.", "success")
@@ -615,15 +618,16 @@ def _remove_photo(r: Rig) -> None:
         r.photo = None
 
 
-@main.post("/rigs/rig/<int:rid>/photo")
-def upload_rig_photo(rid: int):
-    """Store an uploaded photo of a rig (JPG/PNG/WebP …) as JPEG in DATA_PATH/rigs, oriented and resized."""
+def _copy_photo(rel: str, rid: int) -> str:
+    new = f"rigs/{rid}-{secrets.token_hex(4)}.jpg"
+    shutil.copyfile(_photo_path(rel), _photo_path(new))
+    return new
+
+
+def _store_upload(f, rid: int) -> str | None:
+    """Store an uploaded photo (JPG/PNG/WebP …) as JPEG in DATA_PATH/rigs, oriented and resized.
+    None if it is not a readable image."""
     from PIL import Image, ImageOps, UnidentifiedImageError
-    r = db.session.get(Rig, rid) or abort(404)
-    f = request.files.get("photo")
-    if not f or not f.filename:
-        flash("Keine Datei ausgewählt.", "warning")
-        return redirect(url_for("main.rigs_page") + "#rigs")
     try:
         with Image.open(f.stream) as im:
             im = ImageOps.exif_transpose(im).convert("RGB")
@@ -633,21 +637,28 @@ def upload_rig_photo(rid: int):
             out.parent.mkdir(parents=True, exist_ok=True)
             im.save(out, "JPEG", quality=88)
     except (UnidentifiedImageError, OSError, ValueError):
-        flash(f"„{f.filename}“ ist kein lesbares Bild (JPG, PNG oder WebP).", "danger")
-        return redirect(url_for("main.rigs_page") + "#rigs")
-    _remove_photo(r)
-    r.photo = rel
-    db.session.commit()
-    flash(f"Foto für „{r.name}“ gespeichert.", "success")
-    return redirect(url_for("main.rigs_page") + f"#rig-{rid}")
+        return None
+    return rel
 
 
-@main.post("/rigs/rig/<int:rid>/photo/delete")
-def delete_rig_photo(rid: int):
-    r = db.session.get(Rig, rid) or abort(404)
-    _remove_photo(r)
-    db.session.commit()
-    return redirect(url_for("main.rigs_page") + f"#rig-{rid}")
+def _update_photo(r: Rig) -> None:
+    """Photo fields of the rig form: a new file replaces the photo, "remove" drops it, a duplicate copies
+    the photo of its source (own file, so deleting one keeps the other)."""
+    f = request.files.get("photo")
+    if f and f.filename:
+        rel = _store_upload(f, r.id)
+        if rel is None:
+            flash(f"„{f.filename}“ ist kein lesbares Bild (JPG, PNG oder WebP) – Foto unverändert.", "danger")
+        else:
+            _remove_photo(r)
+            r.photo = rel
+        return
+    if request.form.get("remove_photo"):
+        _remove_photo(r)
+        return
+    src = db.session.get(Rig, request.form.get("copy_photo", type=int)) if request.form.get("copy_photo") else None
+    if src is not None and src.photo and not r.photo and _photo_path(src.photo).is_file():
+        r.photo = _copy_photo(src.photo, r.id)
 
 
 @main.route("/rigs/rig/<int:rid>/photo")

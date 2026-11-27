@@ -188,8 +188,9 @@ def test_rig_photo(app, client):  # noqa: F811
         Image.new("RGB", (w, h), (200, 30, 30)).save(b, "PNG")
         b.seek(0)
         return b
-    r = client.post(f"/rigs/rig/{rid}/photo", data={"photo": (png(4000, 3000), "newton.png")},
-                    content_type="multipart/form-data")
+    form = dict(id=rid, name="Newton", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"], active="1")
+    assert client.get("/rigs").data.decode().count('name="photo"') == 1    # only in the rig form, not on the cards
+    r = client.post("/rigs/rig", data=form | {"photo": (png(4000, 3000), "newton.png")}, content_type="multipart/form-data")
     assert r.status_code == 302
     with app.app_context():
         first = db.session.get(Rig, rid).photo
@@ -198,15 +199,24 @@ def test_rig_photo(app, client):  # noqa: F811
         assert im.format == "JPEG" and max(im.size) == 1600
     assert f"/rigs/rig/{rid}/photo" in client.get("/rigs").data.decode()
     assert client.get(f"/rigs/rig/{rid}/photo").mimetype == "image/jpeg"
-    r = client.post(f"/rigs/rig/{rid}/photo", data={"photo": (io.BytesIO(b"kein Bild"), "x.jpg")},
-                    content_type="multipart/form-data")
+    client.post("/rigs/rig", data=form | {"photo": (io.BytesIO(b"kein Bild"), "x.jpg")}, content_type="multipart/form-data")
     with app.app_context():
         assert db.session.get(Rig, rid).photo == first             # not an image: old photo stays
-    client.post(f"/rigs/rig/{rid}/photo", data={"photo": (png(300, 200), "neu.png")}, content_type="multipart/form-data")
+    client.post("/rigs/rig", data=form | {"photo": (png(300, 200), "neu.png")}, content_type="multipart/form-data")
     with app.app_context():
         second = db.session.get(Rig, rid).photo
     assert second != first and not f.exists()                      # replaced, old file removed
-    client.post(f"/rigs/rig/{rid}/photo/delete")
+    client.post("/rigs/rig", data=form)                            # saved without a file: photo stays
+    with app.app_context():
+        assert db.session.get(Rig, rid).photo == second
+    # duplicating: the form offers the photo, the copy gets its own file
+    assert 'name="copy_photo"' in client.get(f"/rigs?copy={rid}").data.decode()
+    client.post("/rigs/rig", data=dict(name="Newton 2", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"],
+                                       active="1", copy_photo=rid))
+    with app.app_context():
+        dup = db.session.query(Rig).filter_by(name="Newton 2").one().photo
+    assert dup and dup != second and (Path(app.config["DATA_PATH"]) / dup).is_file()
+    client.post("/rigs/rig", data=form | {"remove_photo": "1"})
     assert client.get(f"/rigs/rig/{rid}/photo").status_code == 404
     assert not (Path(app.config["DATA_PATH"]) / second).exists()
 
@@ -329,7 +339,8 @@ def test_catalog_rig_thumbnail(app, client):  # noqa: F811
     b = io.BytesIO()
     Image.new("RGB", (400, 300), (10, 120, 200)).save(b, "PNG")
     b.seek(0)
-    client.post(f"/rigs/rig/{rid}/photo", data={"photo": (b, "n.png")}, content_type="multipart/form-data")
+    client.post("/rigs/rig", data=dict(id=rid, name="Newton", camera_id=ids["Canon 1200D"], optic_id=ids["Skywatcher 150P"],
+                                       active="1", photo=(b, "n.png")), content_type="multipart/form-data")
     page = client.get(f"/target/{tid}", headers={"HX-Request": "true"}).data.decode()
     assert "pl-dataset-thumb" in page and f"/rigs/rig/{rid}/photo" in page
 

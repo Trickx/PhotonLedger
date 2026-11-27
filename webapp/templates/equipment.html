@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 {% block title %}Ausrüstung · Photon Ledger{% endblock %}
 {% macro num(v, d=0) %}{% if v is not none %}{{ ('%.' ~ d ~ 'f')|format(v)|replace('.', ',') }}{% endif %}{% endmacro %}
+{% from "_rig.html" import rig_placeholder %}
 {% block content %}
 <div class="pl-page">
     <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -14,10 +15,16 @@
     <div class="pl-rig-stats">
     {% for st in rig_stats %}{% set r = st.rig %}{% set lo, hi = r.focal_range %}
         <div class="pl-rig-stat {% if not r.active %}pl-inactive{% endif %}">
-            <div class="pl-rig-head"><strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge text-bg-secondary">inaktiv</span>{% endif %}
-                <a class="ms-auto btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rigs">Bearbeiten</a></div>
-            <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}
-                · {{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm{% set s = r.scale_at(lo) %}{% if s %} · {{ num(r.scale_at(hi), 2) }}{% if hi != lo %}–{{ num(s, 2) }}{% endif %}″/px{% endif %}</div>
+            <div class="pl-rig-stat-top">
+                <div class="pl-rig-stat-title">
+                    <div class="pl-rig-head"><strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge text-bg-secondary">inaktiv</span>{% endif %}</div>
+                    <div class="pl-rig-parts">{{ r.camera.name }} · {{ r.optic.name }}{% if r.corrector %} · {{ r.corrector.name }}{% endif %}
+                        · {{ num(lo) }}{% if hi != lo %}–{{ num(hi) }}{% endif %} mm{% set s = r.scale_at(lo) %}{% if s %} · {{ num(r.scale_at(hi), 2) }}{% if hi != lo %}–{{ num(s, 2) }}{% endif %}″/px{% endif %}</div>
+                </div>
+                {% if r.photo %}<a class="pl-rig-thumb" href="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" target="_blank" title="Foto in voller Größe">
+                    <img src="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" alt="Foto von {{ r.name }}" loading="lazy"></a>
+                {% else %}<span class="pl-rig-thumb" title="Noch kein Foto – unter „Rigs verwalten“ hochladen">{{ rig_placeholder() }}</span>{% endif %}
+            </div>
             <div class="pl-total"><span>{{ st.seconds|hours }}</span> Stunden</div>
             <div class="pl-mini">
                 <div><b>{{ st.n_targets }}</b><span>Ziele</span></div>

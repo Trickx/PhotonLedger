@@ -5,7 +5,7 @@
 {% from "_cal.html" import fdb %}
 {% block content %}
 <div class="pl-page">
-    <h1>Sessions <span class="pl-count">{{ sessions|length }}</span></h1>
+    <h1>Sessions <span class="pl-count">{{ total }}</span></h1>
     <p class="pl-lead">Eine Session ist ein Ordner mit Lights (bzw. Flats, Darks, Bias). Liegt kein Datumsordner dazwischen, ist der Zielordner selbst die Session.</p>
     <p class="pl-dot-legend">Log (ASIAIR/NINA), PHD2, WBPP und SAD:
         <span><i class="pl-dot pl-dot-ok"></i>Log vorhanden, keine Fehler</span>
@@ -13,6 +13,34 @@
         <span><i class="pl-dot pl-dot-error"></i>Log mit Fehlern</span>
         <span><i class="pl-dot pl-dot-hint"></i>SAD mit Hinweisen</span>
         <span>· Details beim Überfahren, Klick öffnet den Bereich auf der Session-Seite</span></p>
+    <form class="pl-session-filters" hx-get="{{ url_for('main.sessions') }}" hx-target="#session-table" hx-select="#session-table"
+          hx-swap="outerHTML" hx-trigger="change, input from:#sq delay:300ms" hx-push-url="true">
+        <input id="sq" class="form-control form-control-sm" type="search" name="q" value="{{ args.q }}"
+               placeholder="Ziel oder Ordner …" autocomplete="off" aria-label="Suche nach Ziel oder Ordner">
+        <select class="form-select form-select-sm" name="jahr" aria-label="Jahr">
+            <option value="">Alle Jahre</option>
+            {% for y in years %}<option {% if args.jahr == y|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm" name="rig" aria-label="Rig">
+            <option value="">Alle Rigs</option>
+            {% for id, name in rig_names %}<option value="{{ id }}" {% if args.rig == id|string %}selected{% endif %}>{{ name }}</option>{% endfor %}
+            <option value="none" {% if args.rig == 'none' %}selected{% endif %}>ohne Rig</option>
+        </select>
+        <select class="form-select form-select-sm" name="filter" aria-label="Filter">
+            <option value="">Alle Filter</option>
+            {% for f in filter_names %}<option {% if args.filter == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm" name="zustand" aria-label="Zustand">
+            <option value="">Jeder Zustand</option>
+            {% for k, lbl, n in states %}<option value="{{ k }}" {% if args.zustand == k %}selected{% endif %}>{{ lbl }} ({{ n }})</option>{% endfor %}
+        </select>
+    </form>
+
+    <div id="session-table">
+    {% set filtered = sessions|length != total %}
+    <p class="pl-note mb-2">{% if filtered %}{{ sessions|length }} von {{ total }} Sessions{% else %}{{ total }} Sessions{% endif %} · {{ exposure|duration }} Belichtung
+        {% if filtered %} · <a href="{{ url_for('main.sessions') }}">Filter zurücksetzen</a>{% endif %}</p>
+    {% if sessions %}
     <div class="table-responsive">
     <table class="table table-sm pl-table align-middle">
         <thead><tr>
@@ -38,6 +66,8 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
+    {% else %}<p class="text-body-secondary">Keine Session passt zu diesen Filtern.</p>{% endif %}
     </div>
 </div>
 {% endblock %}

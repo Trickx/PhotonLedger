@@ -19,6 +19,12 @@ Versionsnummern nach `MAJOR.MINOR.PATCH`; die aktuelle steht in [`VERSION`](VERS
   z. B. Canon 7D Mark II: 792 → 756 mm) – für Lights und die Kalibrierbilder derselben Nacht.
 - Das Fehlerband eines fehlgeschlagenen Indexlaufs verschwindet, solange ein neuerer Lauf aktiv ist.
 - Videos (MP4, MOV, M4V, WebM) als Versionen: im Katalog und in der Vollbild-Ansicht abspielbar.
+- JPG/PNG/TIFF in Lights-, Flats-, Darks- und Bias-Ordnern zählen als Einzelbilder (EXIF, z. B. DWARF-3-Burst);
+  Warnung, wenn ein Ordner sie mit FITS/RAW mischt.
+- Sessions-Seite mit Filtern: Suche, Jahr, Rig, Filter und Zustand (Logs mit Fehlern, ungestackt, ohne
+  Flats/Darks, ohne Log …), Anzahl und Belichtung der Auswahl.
+- Rig-Foto nur noch im Formular „Rig bearbeiten“; beim Duplizieren wird es übernommen. Rig-Bild auch unter
+  Ausrüstung; Aktionen unten auf der Karte. Statistik in der Navigation unter Sessions.
 
 ## 1.0.0 – 2026-11-26
 

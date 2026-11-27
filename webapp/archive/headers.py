@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-from .rules import FITS_EXT, RAW_EXT, XISF_EXT
+from .rules import FITS_EXT, IMAGE_EXT, RAW_EXT, XISF_EXT
 
 
 def _num(v):
@@ -160,6 +160,15 @@ def _raf_embedded_jpeg(path: Path) -> bytes | None:
         return fh.read(length)
 
 
+def _image_size(path: Path) -> dict:
+    from PIL import Image
+    try:
+        with Image.open(path) as im:             # reads only the header
+            return {"NAXIS1": im.width, "NAXIS2": im.height}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def read_raw_cards(path: Path) -> dict:
     import exifread
 
@@ -195,8 +204,8 @@ def read_raw_cards(path: Path) -> dict:
     }
     make = (tag("Image Make") or "").strip()
     model = (tag("Image Model") or "").strip()
-    if model.lower().startswith(make.lower()):
-        cards["INSTRUME"] = model or None
+    if model.lower().startswith(make.lower()) or (model and make.lower().startswith(model.split()[0].lower())):
+        cards["INSTRUME"] = model or None          # "Canon EOS 550D"; "DWARF 3" (make DWARFLAB) as in its FITS
     return {k: v for k, v in cards.items() if v is not None}
 
 
@@ -226,7 +235,7 @@ def read_header(path: Path) -> tuple[dict, dict]:
     """Return (normalized fields, raw cards). The format is taken from the content, so that a FITS file
     with a wrong extension (e.g. renamed to .raf) is still read; the raw cards then name the content."""
     ext = path.suffix.lower()
-    if ext not in FITS_EXT and ext not in XISF_EXT and ext not in RAW_EXT:
+    if ext not in FITS_EXT and ext not in XISF_EXT and ext not in RAW_EXT and ext not in IMAGE_EXT:
         raise ValueError(f"unsupported file type {ext}")
     expected, content = _format_of_ext(ext), sniff(path)
     fmt = content or expected
@@ -238,6 +247,8 @@ def read_header(path: Path) -> tuple[dict, dict]:
         cards = read_xisf_cards(path)
     else:
         cards = read_raw_cards(path)
+        if ext in IMAGE_EXT:                     # JPG/PNG/TIFF frames: image size from the file header
+            cards.update(_image_size(path))
     if content and content != expected:
         cards[CONTENT_CARD] = content
     cards = {k: v for k, v in cards.items() if k not in ("COMMENT", "HISTORY", "")}

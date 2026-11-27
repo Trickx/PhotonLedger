@@ -107,6 +107,25 @@ def run(cfg: dict) -> int:
                 "Fehlen EXPTIME/DATE-OBS (FITS/XISF) bzw. ExposureTime/DateTimeOriginal (EXIF bei RAW), "
                 "kann die Belichtung nicht gezählt werden.",
                 session=s, path=missing[0].path, count=len(missing))
+        # JPG/PNG/TIFF next to FITS/XISF/RAW in the same frame folder: usually exported previews that are
+        # then counted as extra lights (or raw data next to a burst of JPGs)
+        by_dir: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+        for f in fs:
+            if f.frame_type:
+                ext = "." + f.path.rsplit(".", 1)[-1].lower()
+                by_dir[f.path.rsplit("/", 1)[0]]["image" if ext in rules.IMAGE_EXT else "raw"].append(f)
+        for folder, kinds in by_dir.items():
+            if kinds.get("image") and kinds.get("raw"):
+                imgs = kinds["image"]
+                exts = sorted({f.path.rsplit(".", 1)[-1].upper() for f in imgs})
+                raws = sorted({f.path.rsplit(".", 1)[-1].upper() for f in kinds["raw"]})
+                add("warning", "mixed_formats",
+                    f"„{folder.rsplit('/', 1)[-1]}“ in „{root}“ mischt {'/'.join(exts)} ({len(imgs)}) mit "
+                    f"{'/'.join(raws)} ({len(kinds['raw'])})",
+                    "Beide werden als Einzelbilder gezählt – sind die JPGs nur Vorschauen/Exporte der Rohdaten, "
+                    "doppelt sich die Belichtung. Vorschauen in einen eigenen Ordner (z. B. Processing) verschieben.\n"
+                    + "\n".join(f.path for f in imgs[:25]),
+                    session=s, path=imgs[0].path, count=len(imgs))
         # content does not match the file extension (e.g. a FITS file renamed to .raf)
         renamed = defaultdict(list)
         for f in fs:

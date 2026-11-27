@@ -221,8 +221,9 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
         # a video next to the raw data (Lights/…) is a capture, not a result
         return None if frame_type is not None else Classified("version", target_folder, None)
     if ext in IMAGE_EXT:
-        if frame_type is not None:      # e.g. JPG lights of a solar eclipse: not a version
-            return None
+        if frame_type is not None:      # e.g. JPG lights of a solar eclipse (DWARF burst): frames, read via EXIF
+            root = "/".join(head + below[:frame_idx]) if frame_idx else target_folder
+            return Classified("frame", target_folder, root, frame_type, rejected)
         if _SUBFRAME_NAME_RE.match(p.name):
             return None                 # a single sub frame exported as TIFF, not a result
         return Classified("version", target_folder, None)

@@ -26,12 +26,12 @@
             <i class="bi bi-globe2"></i><span>Katalog</span></a>
         <a class="pl-nav-link {% if ep == 'main.sessions' %}active{% endif %}" href="{{ url_for('main.sessions') }}">
             <i class="bi bi-calendar3"></i><span>Sessions</span></a>
+        <a class="pl-nav-link {% if ep == 'main.statistics' %}active{% endif %}" href="{{ url_for('main.statistics') }}">
+            <i class="bi bi-bar-chart"></i><span>Statistik</span></a>
         <a class="pl-nav-link {% if ep == 'main.equipment' %}active{% endif %}" href="{{ url_for('main.equipment') }}">
             <i class="bi bi-camera"></i><span>Ausrüstung</span></a>
         <a class="pl-nav-link {% if ep == 'main.rigs_page' %}active{% endif %}" href="{{ url_for('main.rigs_page') }}">
             <i class="bi bi-tools"></i><span>Rigs</span></a>
-        <a class="pl-nav-link {% if ep == 'main.statistics' %}active{% endif %}" href="{{ url_for('main.statistics') }}">
-            <i class="bi bi-bar-chart"></i><span>Statistik</span></a>
         <a class="pl-nav-link {% if ep == 'main.checks' %}active{% endif %}" href="{{ url_for('main.checks') }}">
             <i class="bi bi-clipboard-check"></i><span>Prüfungen</span>
             {% set nb = issue_badge() %}{% if nb %}<span class="pl-nav-badge" title="{{ nb }} Fehler und Warnungen">{{ nb }}</span>{% endif %}</a>

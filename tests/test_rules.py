@@ -42,6 +42,7 @@ from webapp.archive.headers import normalize
     ("NGC 7635 (Bubble Nebula)/Processing/master/DXO/b.tif", "version", "NGC 7635 (Bubble Nebula)", None, None, False),
     ("IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/x.jpg", "version", "IC1396 (Elephant's Trunk Nebula)", None, None, False),
     ("Blutmond 2025-09-07/b.jpg", "version", "Blutmond 2025-09-07", None, None, False),
+    ("Solar Eclipse/2026-08-12/Lights/s.jpg", "frame", "Solar Eclipse", "Solar Eclipse/2026-08-12", "light", False),
 ])
 def test_classify(path, kind, target, root, ftype, rejected):
     c = rules.classify(path)
@@ -88,7 +89,6 @@ def test_wbpp_kind(name, kind):
 @pytest.mark.parametrize("path", [
     "IC 1805 (Heart & Soul Nebula)/Lights/SAD/p.png",                 # analysis output
     "IC 1805 (Heart & Soul Nebula)/Processing/master/H.pxiproject/project.data/x",
-    "Solar Eclipse/2026-08-12/Lights/s.jpg",                         # jpg lights: no version
     "M45 (Pleiades)/PI/logs/l.jpg",
     "M97, M108 (Surfboard, Owl)/2026-04-28/Processing/Light_Pane 1_180.0s_Bin1_ISO1600_0043.tif",
     "x.fit",                                                              # directly in the archive root

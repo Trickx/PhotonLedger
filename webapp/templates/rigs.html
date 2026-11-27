@@ -56,19 +56,11 @@
                 <a class="pl-rig-photo" href="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" target="_blank" title="Foto in voller Größe">
                     <img src="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" alt="Foto von {{ r.name }}" loading="lazy"></a>
                 {% else %}
-                <div class="pl-rig-photo" title="Noch kein Foto – „Foto hochladen“ unten auf der Karte">{{ rig_placeholder() }}</div>
+                <div class="pl-rig-photo" title="Noch kein Foto – unter „Bearbeiten“ hochladen">{{ rig_placeholder() }}</div>
                 {% endif %}
                 <div class="pl-rig-head">
                     <strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge text-bg-secondary">inaktiv</span>{% endif %}
                     {% if r.mount and r.mount.kind == 'smart' %}<span class="badge pl-badge-smart" title="Kamera, Optik und Montierung in einem Gerät">Smart-Teleskop</span>{% endif %}
-                    <span class="ms-auto">
-                        <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rig-form">Bearbeiten</a>
-                        <a class="btn btn-sm btn-link p-0 ms-2" href="{{ url_for('main.rigs_page', copy=r.id) }}#rig-form"
-                           title="Neues Rig mit denselben Komponenten anlegen – z. B. mit anderer Kamera">Duplizieren</a>
-                        <form class="d-inline" method="post" action="{{ url_for('main.delete_component', kind='rig', oid=r.id) }}"
-                              onsubmit="return confirm('Rig „{{ r.name }}“ löschen? Zuordnungen zu Aufnahmen gehen verloren.')">
-                            <button class="btn btn-sm btn-link text-danger p-0 ms-2">Löschen</button></form>
-                    </span>
                 </div>
                 <div class="pl-rig-parts">{{ rig_parts(r) }}</div>
                 {{ rig_specs(r, seeing, drivers) }}
@@ -84,25 +76,21 @@
                     {% endif %}
                 </div>
                 {% endif %}
-                {% if may_change %}
-                <div class="pl-rig-photo-actions">
-                    <form method="post" enctype="multipart/form-data" action="{{ url_for('main.upload_rig_photo', rid=r.id) }}">
-                        <label class="btn btn-sm btn-link p-0"><i class="bi bi-camera"></i> {{ 'Foto ersetzen' if r.photo else 'Foto hochladen' }}
-                            <input type="file" name="photo" accept="image/*" hidden onchange="this.form.submit()"></label>
-                    </form>
-                    {% if r.photo %}
-                    <form method="post" action="{{ url_for('main.delete_rig_photo', rid=r.id) }}" onsubmit="return confirm('Foto von „{{ r.name }}“ entfernen?')">
-                        <button class="btn btn-sm btn-link text-danger p-0">Foto entfernen</button></form>
-                    {% endif %}
+                <div class="pl-rig-actions">
+                    <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', rig=r.id) }}#rig-form">Bearbeiten</a>
+                    <a class="btn btn-sm btn-link p-0" href="{{ url_for('main.rigs_page', copy=r.id) }}#rig-form"
+                       title="Neues Rig mit denselben Komponenten anlegen – z. B. mit anderer Kamera">Duplizieren</a>
+                    <form class="ms-auto" method="post" action="{{ url_for('main.delete_component', kind='rig', oid=r.id) }}"
+                          onsubmit="return confirm('Rig „{{ r.name }}“ löschen? Zuordnungen zu Aufnahmen gehen verloren.')">
+                        <button class="btn btn-sm btn-link text-danger p-0" title="Rig löschen" aria-label="Rig löschen"><i class="bi bi-trash"></i></button></form>
                 </div>
-                {% endif %}
             </div>
         {% endfor %}
         </div>
         </div>
         {% else %}<p class="text-body-secondary">Noch keine Rigs.</p>{% endfor %}
         {% set editing = cur.rig is not none %}{% set r = cur.rig or cur.source %}
-        <form class="pl-form pl-form-new" method="post" action="{{ url_for('main.save_rig') }}" id="rig-form">
+        <form class="pl-form pl-form-new" method="post" enctype="multipart/form-data" action="{{ url_for('main.save_rig') }}" id="rig-form">
             <h3 class="pl-form-title">{% if editing %}Rig bearbeiten{% elif r %}Neues Rig – Kopie von „{{ r.name }}“{% else %}Neues Rig{% endif %}</h3>
             {% if editing %}<input type="hidden" name="id" value="{{ r.id }}">{% endif %}
             <div class="pl-form-grid">
@@ -129,6 +117,14 @@
                     {% for c in guide_cameras + (cameras|selectattr('id', 'equalto', r.guide_camera_id)|list if r else []) %}<option value="{{ c.id }}" {% if r and r.guide_camera_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
                 </select></label>
                 <label class="pl-check"><input type="checkbox" name="active" value="1" {% if not r or r.active %}checked{% endif %}> aktiv</label>
+            </div>
+            <div class="pl-form-photo">
+                {% if r and r.photo %}<img src="{{ url_for('main.rig_photo', rid=r.id, v=r.photo) }}" alt="Foto von {{ r.name }}">{% else %}<span class="pl-rig-thumb">{{ rig_placeholder() }}</span>{% endif %}
+                <div>
+                    <label>{{ 'Foto ersetzen' if editing and r.photo else 'Foto' }} (JPG, PNG, WebP)<input class="form-control form-control-sm" type="file" name="photo" accept="image/*"></label>
+                    {% if editing and r.photo %}<label class="pl-check"><input type="checkbox" name="remove_photo" value="1"> Foto entfernen</label>
+                    {% elif r and r.photo %}<label class="pl-check"><input type="checkbox" name="copy_photo" value="{{ r.id }}" checked> Foto von „{{ r.name }}“ übernehmen</label>{% endif %}
+                </div>
             </div>
             <div class="pl-form-actions">
                 <button class="btn btn-sm btn-primary">{{ 'Rig aktualisieren' if editing else 'Rig anlegen' }}</button>

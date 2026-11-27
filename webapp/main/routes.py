@@ -37,7 +37,7 @@ CHECK_GROUPS = [
     ("kalibrierung", "Kalibrierung", "bi-sliders",
      {"darks_bias_present", "no_flats", "dark_exposure", "dark_no_header", "dark_temperature", "flat_camera",
       "flat_focal", "flat_filter"}),
-    ("dateien", "Dateien & Header", "bi-file-earmark-x", {"unreadable", "missing_header", "wrong_extension"}),
+    ("dateien", "Dateien & Header", "bi-file-earmark-x", {"unreadable", "missing_header", "wrong_extension", "mixed_formats"}),
     ("optik", "Optik (SAD)", "bi-bullseye",
      {"sad_tilt", "sad_edge", "sad_tracking", "sad_outliers", "sad_frame_errors", "sad_missing", "sad_unreadable"}),
     ("rigs", "Rigs", "bi-tools", {"no_rig"}),
@@ -465,6 +465,33 @@ def healthz():
     return {"status": "ok"}
 
 
+SESSION_STATES = {
+    "probleme": "Logs mit Fehlern",
+    "hinweise": "SAD mit Hinweisen",
+    "ungestackt": "nicht mit WBPP gestackt",
+    "unkalibriert": "ohne Flats/Darks",
+    "ohne_log": "ohne ASIAIR/NINA-Log",
+    "ohne_guiding": "ohne PHD2-Log",
+}
+
+
+def _session_state(key, s, st, cal) -> bool:
+    if key == "probleme":
+        return any(x.get(s.root, {}).get("status") == "error" for x in st.values())
+    if key == "hinweise":
+        return st["sad"].get(s.root, {}).get("status") == "hint"
+    if key == "ungestackt":
+        return st["wbpp"].get(s.root, {}).get("status", "none") == "none"
+    if key == "unkalibriert":
+        c = cal.get(s.root)
+        return bool(s.lights and not s.calibrated and not (c and (c.get("flat") or c.get("dark"))))
+    if key == "ohne_log":
+        return s.root not in st["night"]
+    if key == "ohne_guiding":
+        return st["phd"].get(s.root, {}).get("status", "none") == "none"
+    return True
+
+
 @main.route("/sessions")
 def sessions():
     rows = db.session.scalars(select(Session).where((Session.lights > 0) | (Session.duplicates > 0))).all()
@@ -473,10 +500,39 @@ def sessions():
     from webapp.main.night_view import night_status
     from webapp.main.rigs import Resolver
     from webapp.main.wbpp_view import session_calibration, session_status
-    rigs = session_rigs(rows, Resolver(current_app.config["FOCAL_TOLERANCE"]))
     from webapp.main.sad_view import sad_status
-    return render_template("sessions.html", sessions=rows, sad=sad_status(sad_overview()), phd=guiding_status(),
-                           night=night_status(), wbpp=session_status(), rigs=rigs, cal=session_calibration())
+    rigs = session_rigs(rows, Resolver(current_app.config["FOCAL_TOLERANCE"]))
+    st = dict(night=night_status(), phd=guiding_status(), wbpp=session_status(), sad=sad_status(sad_overview()))
+    cal = session_calibration()
+
+    # choices come from all sessions, so a filter never makes the others disappear
+    years = sorted({s.date.year for s in rows if s.date}, reverse=True)
+    rig_names = {x["rig"].id: x["rig"].name for s in rows for x in rigs[s.id] if x["rig"]}
+    filters = sorted({f for s in rows for f in (s.filters or {})}, key=str.lower)
+    a = dict(q=(request.args.get("q") or "").strip(), jahr=request.args.get("jahr", ""),
+             rig=request.args.get("rig", ""), filter=request.args.get("filter", ""),
+             zustand=request.args.get("zustand", ""))
+    shown = rows
+    if a["q"]:
+        words = a["q"].lower().split()
+        shown = [s for s in shown if all(w in " ".join(filter(None, (
+            s.target.name if s.target else "", s.target.common_name if s.target else "", s.root, s.label))).lower()
+            for w in words)]
+    if a["jahr"].isdigit():
+        shown = [s for s in shown if s.date and s.date.year == int(a["jahr"])]
+    if a["rig"] == "none":
+        shown = [s for s in shown if any(not x["rig"] for x in rigs[s.id]) or not rigs[s.id]]
+    elif a["rig"].isdigit():
+        shown = [s for s in shown if any(x["rig"] and x["rig"].id == int(a["rig"]) for x in rigs[s.id])]
+    if a["filter"]:
+        shown = [s for s in shown if a["filter"] in (s.filters or {})]
+    if a["zustand"] in SESSION_STATES:
+        shown = [s for s in shown if _session_state(a["zustand"], s, st, cal)]
+    return render_template("sessions.html", sessions=shown, total=len(rows), args=a, years=years,
+                           rig_names=sorted(rig_names.items(), key=lambda kv: kv[1].lower()), filter_names=filters,
+                           states=[(k, lbl, sum(_session_state(k, s, st, cal) for s in rows)) for k, lbl in SESSION_STATES.items()],
+                           exposure=sum(s.exposure_s for s in shown),
+                           sad=st["sad"], phd=st["phd"], night=st["night"], wbpp=st["wbpp"], rigs=rigs, cal=cal)
 
 
 @main.route("/equipment")
