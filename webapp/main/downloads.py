@@ -181,6 +181,24 @@ def download_version(vid: int):
     return send_file(full, as_attachment=True, download_name=v.path.rsplit("/", 1)[-1])
 
 
+@main.route("/version/<int:vid>/overlay.svg")
+def version_overlay(vid: int):
+    """The annotation overlay of a version. Shown through <img> (no scripts run there); the headers also keep
+    a directly opened SVG from running anything."""
+    from webapp.archive.overlays import target_overlays
+    v = db.session.get(Version, vid) or abort(404)
+    if v.target is None:
+        abort(404)
+    path = target_overlays(current_app.config, v.target)[0].get(v.id)
+    full = archives.resolve(current_app.config, path) if path else None
+    if full is None or not full.is_file():
+        abort(404)
+    r = send_file(full, mimetype="image/svg+xml", conditional=True, max_age=3600)
+    r.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+    r.headers["X-Content-Type-Options"] = "nosniff"
+    return r
+
+
 VIDEO_TYPES = {"mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"}
 
 

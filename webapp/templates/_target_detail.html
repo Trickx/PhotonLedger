@@ -57,12 +57,16 @@
                 {% if may_download %}data-download="{{ url_for('main.download_version', vid=v.id) }}"{% endif %}
                 {% if may_change and not v.is_video %}data-cover="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}"{% endif %}
                 {% if cover and v.id == cover.id %}data-is-cover="1"{% endif %}
+                {% if overlays.get(v.id) %}data-overlay="{{ url_for('main.version_overlay', vid=v.id) }}"{% endif %}
                 title="{{ v.path }} – im Vollbild ansehen">
             {% if v.is_video %}<video src="{{ url_for('main.stream_video', vid=v.id) }}#t=1" preload="metadata" muted playsinline aria-label="{{ v.filename }}"></video>
             <i class="bi bi-play-circle-fill pl-version-play"></i>
             {% else %}<img loading="lazy" src="{{ url_for('main.media', kind='thumbs', vid=v.id) }}" alt="{{ v.filename }}">{% endif %}
-            {% if cover and v.id == cover.id %}<i class="bi bi-check-circle-fill pl-version-check"></i>{% endif %}
+            {% if overlays.get(v.id) %}<i class="bi bi-bounding-box-circles pl-version-overlay" title="Mit Beschriftung öffnen ({{ overlays[v.id].rsplit('/', 1)[-1] }})"></i>{% endif %}
         </button>
+        {% if cover and v.id == cover.id %}<span class="pl-version-star is-cover" title="Titelbild"><i class="bi bi-star-fill"></i></span>
+        {% elif may_change and not v.is_video %}<button class="pl-version-star" type="button" hx-post="{{ url_for('main.set_cover', tid=t.id, vid=v.id) }}"
+           hx-target="#detail" hx-swap="innerHTML" title="Als Titelbild verwenden" aria-label="{{ v.filename }} als Titelbild verwenden"><i class="bi bi-star"></i></button>{% endif %}
         {% if may_download %}<a class="pl-version-dl" href="{{ url_for('main.download_version', vid=v.id) }}" title="{{ v.filename }} herunterladen ({{ v.size|filesize }})"
            aria-label="{{ v.filename }} herunterladen"><i class="bi bi-download"></i></a>{% endif %}
         </div>

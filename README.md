@@ -89,6 +89,18 @@ Katalogdaten: OpenNGC von Mattia Verga, <https://github.com/mattiaverga/OpenNGC>
 Lizenz CC-BY-SA-4.0 (unverändert in `webapp/data`, aktualisieren mit
 `scripts/fetch_catalog.py`).
 
+## Beschriftungen (Overlays)
+
+Ein SVG im `Finals`-Ordner (auch darunter, z. B. `Finals/Overlays/`) wird im Vollbild über das passende
+Final gelegt – Schalter „Beschriftung“ oder Taste `O`. Zugeordnet wird
+
+1. das Final mit demselben Dateinamen (`Bild.jpg` + `Bild.svg`), sonst
+2. jedes Final des Ziels mit genau der Pixelgröße des SVG (`viewBox`, wie sie PixInsights
+   *AnnotateImage* schreibt) – mehrere Exporte desselben Bilds teilen sich ein Overlay.
+
+Passt ein SVG zu keinem Final, steht unter *Prüfungen* ein Hinweis. `scripts/copy_overlays.sh`
+kopiert vorhandene Overlays (z. B. aus einer Website-Galerie) in die Finals-Ordner des Archivs.
+
 ## Guiding (PHD2)
 
 PHD2-Logs (`PHD2_GuideLog_*.txt`, auch vom ASIAIR) in Ordnern `log/`, `Logs/`

@@ -1,12 +1,25 @@
 // Full-screen viewer for the versions of a target: click a thumbnail (or the cover image) to open it,
-// click into the image to zoom 2x at that point, arrows / swipe for the next image, Esc to close.
+// click into the image to zoom 2x at that point, arrows / swipe for the next image, Esc to close,
+// O (or the button) shows the annotation overlay of a final, if there is one.
 (() => {
     const dlg = document.getElementById('pl-viewer');
     if (!dlg) return;
-    const img = dlg.querySelector('img'), video = dlg.querySelector('video'), stage = dlg.querySelector('.pl-viewer-stage');
+    const img = dlg.querySelector('img:not(.pl-viewer-overlay)'), ov = dlg.querySelector('.pl-viewer-overlay'), video = dlg.querySelector('video'), stage = dlg.querySelector('.pl-viewer-stage');
     const nameEl = dlg.querySelector('.pl-viewer-name'), infoEl = dlg.querySelector('.pl-viewer-info');
     const dl = dlg.querySelector('.pl-viewer-dl'), cover = dlg.querySelector('.pl-viewer-cover');
-    let items = [], idx = 0;
+    const ovBtn = dlg.querySelector('.pl-viewer-ov');
+    let items = [], idx = 0, ovOn = false;
+    try { ovOn = localStorage.getItem('pl-overlay') === '1'; } catch (e) { /* no storage */ }
+
+    // the overlay lies in the same grid cell as the image and gets exactly its displayed size
+    const syncOverlay = () => {
+        const has = !!items[idx]?.dataset.overlay && !img.hidden;
+        ovBtn.hidden = !has;
+        ovBtn.setAttribute('aria-pressed', String(ovOn));
+        ovBtn.classList.toggle('is-on', ovOn);
+        ov.hidden = !(has && ovOn);
+        if (!ov.hidden) { ov.style.width = img.clientWidth + 'px'; ov.style.height = img.clientHeight + 'px'; }
+    };
 
     const show = i => {
         idx = (i + items.length) % items.length;
@@ -20,6 +33,8 @@
             video.hidden = true; video.removeAttribute('src'); video.load();
             img.hidden = false; img.src = it.full; img.alt = it.name || '';
         }
+        if (it.overlay) ov.src = it.overlay; else ov.removeAttribute('src');
+        syncOverlay();
         nameEl.textContent = it.name || ''; infoEl.textContent = it.info || '';
         dl.hidden = !it.download; if (it.download) dl.href = it.download;
         cover.hidden = !it.cover;
@@ -36,24 +51,36 @@
         const el = e.target.closest('[data-pl-view]') ||
                    (e.target.closest('[data-pl-open]') && document.getElementById(e.target.closest('[data-pl-open]').dataset.plOpen));
         if (!el || dlg.contains(e.target)) return;
-        e.preventDefault(); open(el);
+        e.preventDefault();
+        if (e.target.closest('.pl-version-overlay')) setOverlay(true);     // overlay symbol: open with it shown
+        open(el);
     });
+    img.addEventListener('load', syncOverlay);
+    window.addEventListener('resize', () => dlg.open && syncOverlay());
+    function setOverlay(on) {
+        ovOn = on;
+        try { localStorage.setItem('pl-overlay', ovOn ? '1' : '0'); } catch (e) { /* no storage */ }
+        syncOverlay();
+    }
+    const toggleOverlay = () => setOverlay(!ovOn);
+    ovBtn.onclick = toggleOverlay;
     dlg.querySelector('.pl-viewer-prev').onclick = () => show(idx - 1);
     dlg.querySelector('.pl-viewer-next').onclick = () => show(idx + 1);
     dlg.querySelector('.pl-viewer-close').onclick = () => dlg.close();
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });   // click on the dark background
-    dlg.addEventListener('close', () => { img.removeAttribute('src'); video.pause(); video.removeAttribute('src'); video.load(); });
+    dlg.addEventListener('close', () => { img.removeAttribute('src'); ov.removeAttribute('src'); video.pause(); video.removeAttribute('src'); video.load(); });
     stage.addEventListener('click', e => {
         if (e.target === video) return;
         if (e.target !== img) return dlg.close();
         const r = img.getBoundingClientRect();
-        img.style.transformOrigin = `${(e.clientX - r.left) / r.width * 100}% ${(e.clientY - r.top) / r.height * 100}%`;
+        img.style.transformOrigin = ov.style.transformOrigin = `${(e.clientX - r.left) / r.width * 100}% ${(e.clientY - r.top) / r.height * 100}%`;
         stage.classList.toggle('is-zoomed');
     });
     document.addEventListener('keydown', e => {
         if (!dlg.open) return;
         if (e.key === 'ArrowLeft') show(idx - 1);
         else if (e.key === 'ArrowRight') show(idx + 1);
+        else if (['o', 'O', '0'].includes(e.key) && !ovBtn.hidden) toggleOverlay();   // O looks like 0: both work
     });
     let x0 = null;
     stage.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, {passive: true});

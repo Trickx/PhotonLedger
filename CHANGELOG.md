@@ -26,6 +26,13 @@ Versionsnummern nach `MAJOR.MINOR.PATCH`; die aktuelle steht in [`VERSION`](VERS
 - Rig-Foto nur noch im Formular „Rig bearbeiten“; beim Duplizieren wird es übernommen. Rig-Bild auch unter
   Ausrüstung; Aktionen unten auf der Karte. Statistik in der Navigation unter Sessions.
 
+- Beschriftungen: SVG-Overlays in Finals-Ordnern werden im Vollbild über das passende Final gelegt
+  (gleicher Name oder gleiche Pixelgröße), Hinweis bei SVGs ohne passendes Final;
+  `scripts/copy_overlays.sh` kopiert die Overlays der Galerie ins Archiv.
+- Katalog: Filter nach Archiv (bei mehreren Archiven), Sortierreihenfolge umkehrbar, Titelbild per Stern;
+  Filter und Sortierung bleiben beim Verlassen erhalten, „Zurücksetzen“ leert auch die Suche.
+- Session-Seite: Filter mit Balken, Filter ohne Lights (nur Flats) ausgeblendet.
+
 ## 1.0.0 – 2026-11-26
 
 Erste nummerierte Version.

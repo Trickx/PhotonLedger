@@ -10,11 +10,17 @@
                    placeholder="Suche: Name, Katalog, Typ, Sternbild …" autocomplete="off">
             <div class="pl-filter-head">
                 <span class="pl-filter-label"><i class="bi bi-funnel"></i> Filter</span>
-                <button type="button" class="btn btn-link btn-sm p-0 pl-filter-reset" title="Alle Filter zurücksetzen"
-                        onclick="const f=this.form; f.querySelectorAll('.pl-filter-grid select').forEach(s=>s.value=''); f.dispatchEvent(new Event('change'))">
+                <button type="button" class="btn btn-link btn-sm p-0 pl-filter-reset" title="Suche und alle Filter zurücksetzen"
+                        onclick="const f=this.form; f.querySelectorAll('.pl-filter-grid select').forEach(s=>s.value=''); f.elements.q.value=''; f.dispatchEvent(new Event('change'))">
                     Zurücksetzen</button>
             </div>
             <div class="pl-filter-grid">
+                {% if opts.archives %}
+                <select class="form-select form-select-sm pl-filter-wide" name="archive" aria-label="Archiv">
+                    <option value="">Alle Archive</option>
+                    {% for a in opts.archives %}<option {% if args.get('archive') == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+                </select>
+                {% endif %}
                 <select class="form-select form-select-sm" name="year">
                     <option value="">Alle Jahre</option>
                     {% for y in opts.years %}<option {% if args.get('year') == y|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
@@ -33,7 +39,12 @@
                 </select>
             </div>
             <div class="pl-sort">
-                <label class="pl-filter-label" for="sort"><i class="bi bi-sort-down"></i> Sortieren nach</label>
+                {% set rev = args.get('rev') == '1' %}
+                <input type="hidden" name="rev" value="{{ '1' if rev else '' }}">
+                <button type="button" class="btn btn-link p-0 pl-filter-label pl-sort-dir" aria-label="Sortierreihenfolge umkehren"
+                        title="{{ 'Umgekehrte Reihenfolge – klicken für die normale' if rev else 'Klicken kehrt die Reihenfolge um' }}"
+                        onclick="const r=this.form.elements.rev, on=r.value!=='1'; r.value=on?'1':''; this.querySelector('i').className='bi '+(on?'bi-sort-up':'bi-sort-down'); this.title=on?'Umgekehrte Reihenfolge – klicken für die normale':'Klicken kehrt die Reihenfolge um'; this.form.dispatchEvent(new Event('change'))">
+                    <i class="bi {{ 'bi-sort-up' if rev else 'bi-sort-down' }}"></i> Sortieren nach</button>
                 <select id="sort" class="form-select form-select-sm" name="sort">
                     <option value="name" {% if args.get('sort') in (None, 'name') %}selected{% endif %}>Katalog</option>
                     <option value="hours" {% if args.get('sort') == 'hours' %}selected{% endif %}>Belichtung</option>

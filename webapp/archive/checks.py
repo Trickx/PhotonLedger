@@ -383,6 +383,16 @@ def run(cfg: dict) -> int:
         if len(vs) > 1:
             add("hint", "duplicate_version", f"Version „{vs[0].filename}“ liegt {len(vs)}× im Archiv",
                 "\n".join(v.path for v in vs), target_id=vs[0].target_id, path=vs[0].path, count=len(vs))
+    # annotation overlays (SVG in Finals) that fit no final: other name and other pixel size
+    from .overlays import target_overlays
+    for t in db.session.scalars(select(Target)):
+        for path, size in target_overlays(cfg, t)[1]:
+            add("hint", "overlay_unmatched",
+                f"Beschriftung „{path.rsplit('/', 1)[-1]}“ passt zu keinem Final von {t.name}",
+                (f"Das SVG ist für {size[0]} × {size[1]} px angelegt" if size else "Größe im SVG nicht lesbar")
+                + " – kein Final hat diese Größe oder denselben Dateinamen. Gleich benennen wie das Final "
+                  "(z. B. Bild.jpg + Bild.svg) oder für das Final in Originalgröße erzeugen.\n" + path,
+                target_id=t.id, path=path)
 
     # ---------------------------------------------------------------- StarAberrationDiagnostics
     series_by_root = {}

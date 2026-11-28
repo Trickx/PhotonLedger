@@ -1,6 +1,7 @@
 """End to end: a tiny fake archive -> indexer -> every page renders."""
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -736,6 +737,11 @@ def test_several_archives(app, tmp_path):
     assert c.get(f"/sad/map/{fid}/Mosaic").status_code == 200
     status = c.get("/status").data.decode()
     assert "Archiv „Astro“" in status and "Archiv „Dwarf“" in status
+    assert 'name="archive"' in c.get("/").data.decode()             # catalog filter by archive
+    only_dwarf = c.get("/targets?archive=Dwarf").data.decode()
+    assert "M 66" in only_dwarf and "Mineral Moon" not in only_dwarf   # M 66 is in both archives
+    only_astro = c.get("/targets?archive=Astro").data.decode()
+    assert "M 66" in only_astro and "Mineral Moon" in only_astro
 
     shutil.rmtree(dwarf)                                             # mount gone
     with app.app_context():
@@ -1276,3 +1282,63 @@ def test_session_filters(app):
     no_log = c.get("/sessions?zustand=ohne_log").data.decode()
     assert "/2026-03-22" not in no_log.split('id="session-table"')[1]      # Leo 22.03. has an ASIAIR log
     assert "Keine Session passt" not in c.get("/sessions?rig=none").data.decode()   # no rigs defined at all
+
+
+def test_catalog_sort_reverse(app):
+    """"Sortieren nach" reverses the order (rev=1)."""
+    c = app.test_client()
+    names = lambda html: [n.split("</strong>")[0] for n in html.split("<strong>")[1:]]   # noqa: E731
+    normal = names(c.get("/targets?sort=name").data.decode())
+    assert len(normal) > 1 and names(c.get("/targets?sort=name&rev=1").data.decode()) == normal[::-1]
+    assert "bi-sort-up" in c.get("/?rev=1").data.decode()
+
+
+def _svg(path, w, h):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'<?xml version="1.0"?>\n<svg viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">'
+                    f'<circle cx="10" cy="10" r="5" stroke="#fff"/></svg>')
+
+
+def test_overlays(app, tmp_path):
+    """An SVG in Finals is the overlay of the final with the same name or, else, the same pixel size;
+    one that fits no final gives a hint."""
+    from webapp.archive import overlays
+    from webapp.models import Target
+    arc = Path(app.config["ARCHIVE_PATH"])
+    fin = arc / "M65, M66, NGC 3628 (Leo-Triplett)" / "2026-03-22" / "Finals"
+    Image.new("RGB", (64, 48), (20, 20, 30)).save(fin / "leo_astrobin.jpg")      # same size as leo.jpg
+    Image.new("RGB", (80, 40), (20, 20, 30)).save(fin / "crop.jpg")
+    _svg(fin / "Overlays" / "leo-triplet.svg", 64, 48)                           # by size: leo + leo_astrobin
+    _svg(fin / "crop.svg", 999, 999)                                             # by name, size ignored
+    _svg(fin / "web.svg", 1200, 800)                                             # fits nothing
+    assert overlays.svg_size(fin / "web.svg") == (1200, 800)
+    with app.app_context():
+        run = run_once(app)
+        assert run.phase == "done", run.message
+        t = db.session.query(Target).filter_by(name="M 65").one()
+        by_name = {v.filename: v.id for v in t.versions}
+        found, unmatched = overlays.target_overlays(app.config, t)
+        assert found[by_name["leo.jpg"]].endswith("Overlays/leo-triplet.svg")
+        assert found[by_name["leo_astrobin.jpg"]].endswith("Overlays/leo-triplet.svg")
+        assert found[by_name["crop.jpg"]].endswith("Finals/crop.svg")
+        assert [p.rsplit("/", 1)[-1] for p, _ in unmatched] == ["web.svg"]
+        hint = db.session.query(Issue).filter_by(code="overlay_unmatched").one()
+        assert "web.svg" in hint.message and "1200 × 800" in hint.hint
+        tid, vid = t.id, by_name["leo.jpg"]
+    c = app.test_client()
+    page = c.get(f"/target/{tid}", headers={"HX-Request": "true"}).data.decode()
+    assert f'data-overlay="/version/{vid}/overlay.svg"' in page and "pl-version-overlay" in page
+    r = c.get(f"/version/{vid}/overlay.svg")
+    assert r.status_code == 200 and r.mimetype == "image/svg+xml" and "default-src 'none'" in r.headers["Content-Security-Policy"]
+    assert c.get(f"/version/{by_name['leo_astrobin.jpg'] + 999}/overlay.svg").status_code == 404
+
+
+def test_catalog_remembers_filters(app):
+    """Filters and sort order of the catalog stay when one leaves it and comes back."""
+    c = app.test_client()
+    c.get("/targets?q=&year=2026&camera=&focal=&filter=&sort=hours&rev=1")
+    page = c.get("/").data.decode()
+    assert '<option selected>2026</option>' in page and 'value="hours" selected' in page and "bi-sort-up" in page
+    c.get("/targets?q=&year=&camera=&focal=&filter=&sort=name&rev=")          # "Zurücksetzen"
+    page = c.get("/").data.decode()
+    assert '<option selected>2026</option>' not in page and "bi-sort-down" in page

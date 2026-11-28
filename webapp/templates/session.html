@@ -34,18 +34,21 @@
 
     {{ notes_card(notes) }}
 
+    {% set filters = filters|selectattr('lights')|list %}{# flats of a filter without lights here: left out #}
     {% if filters %}
     <section class="pl-section" id="filter">
         <div class="pl-card">
         <div class="pl-card-head"><span class="pl-phd-title"><i class="bi bi-funnel"></i> Filter</span></div>
-        <table class="pl-spec-table">
-            <thead><tr><th>Filter</th><th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="text-end">Flats</th></tr></thead>
+        {% set fmax = filters|map(attribute='seconds')|max %}
+        <table class="pl-spec-table pl-filter-table">
+            <thead><tr><th>Filter</th><th class="text-end">Lights</th><th class="text-end">Belichtung</th><th class="pl-filter-bar-col"></th><th class="text-end">Flats</th></tr></thead>
             <tbody>
             {% for f in filters %}
             <tr>
                 <td>{{ f.name }}</td>
                 <td class="text-end">{{ f.lights or '–' }}</td>
                 <td class="text-end text-nowrap">{{ f.seconds|duration if f.lights else '–' }}</td>
+                <td class="pl-filter-bar-col"><div class="pl-bar" title="{{ (100 * f.seconds / filters|sum(attribute='seconds'))|round|int if f.seconds else 0 }} % der Belichtung"><div style="width: {{ (100 * f.seconds / fmax) if fmax else 0 }}%"></div></div></td>
                 <td class="text-end {% if f.lights and not f.flats %}text-warning{% endif %}"
                     {% if f.lights and not f.flats %}title="Keine Flats mit diesem Filter in dieser Session"{% endif %}>{{ f.flats or '–' }}</td>
             </tr>

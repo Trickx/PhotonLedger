@@ -43,6 +43,9 @@ from webapp.archive.headers import normalize
     ("IC1396 (Elephant's Trunk Nebula)/PI-Dwarf/master/x.jpg", "version", "IC1396 (Elephant's Trunk Nebula)", None, None, False),
     ("Blutmond 2025-09-07/b.jpg", "version", "Blutmond 2025-09-07", None, None, False),
     ("Solar Eclipse/2026-08-12/Lights/s.jpg", "frame", "Solar Eclipse", "Solar Eclipse/2026-08-12", "light", False),
+    # annotation overlays in Finals (also one level below)
+    ("M51 (Whirlpool Galaxy)/Finals/m51.svg", "intermediate", "M51 (Whirlpool Galaxy)", None, None, False),
+    ("M51 (Whirlpool Galaxy)/2026-04-14/Finals/Overlays/a.svg", "intermediate", "M51 (Whirlpool Galaxy)", None, None, False),
 ])
 def test_classify(path, kind, target, root, ftype, rejected):
     c = rules.classify(path)
@@ -95,6 +98,7 @@ def test_wbpp_kind(name, kind):
     "2026/x.fit",                                                         # directly in a (legacy) year folder
     "M51 (Whirlpool Galaxy)/Lights/notes.txt",
     "M51 (Whirlpool Galaxy)/.DS_Store",
+    "M51 (Whirlpool Galaxy)/Processing/diagram.svg",                     # SVG outside Finals
 ])
 def test_ignored(path):
     assert rules.classify(path) is None

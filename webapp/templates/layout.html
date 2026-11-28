@@ -91,12 +91,13 @@
     <div class="pl-viewer-bar">
         <span class="pl-viewer-name"></span><span class="pl-viewer-info"></span>
         <span class="pl-viewer-actions">
+            <button type="button" class="btn btn-sm btn-link pl-viewer-ov" aria-pressed="false" title="Beschriftung ein-/ausblenden (Taste O oder 0)"><i class="bi bi-bounding-box-circles"></i> Beschriftung <kbd class="pl-kbd">O</kbd></button>
             <button type="button" class="btn btn-sm btn-link pl-viewer-cover"><i class="bi bi-star"></i> Als Titelbild</button>
             <a class="btn btn-sm btn-link pl-viewer-dl"><i class="bi bi-download"></i> Original</a>
             <button type="button" class="btn btn-sm btn-link pl-viewer-close" aria-label="Schließen"><i class="bi bi-x-lg"></i></button>
         </span>
     </div>
-    <figure class="pl-viewer-stage" title="Klicken zum Vergrößern"><img alt=""><video controls playsinline hidden></video></figure>
+    <figure class="pl-viewer-stage" title="Klicken zum Vergrößern"><img alt=""><img class="pl-viewer-overlay" alt="" hidden><video controls playsinline hidden></video></figure>
     <button type="button" class="pl-viewer-nav pl-viewer-prev" aria-label="Vorheriges Bild">&#10094;</button>
     <button type="button" class="pl-viewer-nav pl-viewer-next" aria-label="Nächstes Bild">&#10095;</button>
 </dialog>

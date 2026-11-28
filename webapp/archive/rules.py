@@ -30,6 +30,7 @@ RAW_EXT = {".raf", ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2"}
 FRAME_EXT = FITS_EXT | XISF_EXT | RAW_EXT
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 VIDEO_EXT = {".mp4", ".m4v", ".mov", ".webm"}   # results as video (e.g. an eclipse time-lapse); not raw captures
+OVERLAY_EXT = {".svg"}                    # annotation overlays (PixInsight AnnotateImage), only in Finals folders
 
 FRAME_DIRS = {
     "lights": "light", "light": "light",
@@ -183,7 +184,8 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
     ext = p.suffix.lower()
     if p.name.startswith("."):
         return None
-    if ext not in FRAME_EXT and ext not in IMAGE_EXT and ext not in WBPP_EXT and ext not in VIDEO_EXT:
+    if ext not in FRAME_EXT and ext not in IMAGE_EXT and ext not in WBPP_EXT and ext not in VIDEO_EXT \
+            and ext not in OVERLAY_EXT:
         return None
 
     parts = list(p.parts[:-1])
@@ -214,6 +216,11 @@ def classify(rel_path: str, ignore_dirs: list[str] | None = None) -> Classified 
         elif frame_type is None and _VERSION_RE.match(d):
             in_version_area = True
 
+    if ext in OVERLAY_EXT:
+        # annotation overlay of a final: listed like the other files of a Finals folder, shown over its image
+        if any(d.lower() == "finals" for d in below) and not _SKIP_RE.match(p.name):
+            return Classified("intermediate", target_folder, None)
+        return None
     if wbpp_step:
         # calibrated / registered / debayered … frames, local normalization, drizzle data
         return Classified("intermediate", target_folder, None)

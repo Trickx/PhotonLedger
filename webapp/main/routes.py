@@ -4,10 +4,11 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, select
 
 from webapp import db
+from webapp.archive import archives
 from webapp.archive.rules import catalog_sort_key
 from webapp.models import Frame, IndexRun, Intermediate, Issue, IssueAck, Note, Session, Target, Version
 
@@ -41,7 +42,8 @@ CHECK_GROUPS = [
     ("optik", "Optik (SAD)", "bi-bullseye",
      {"sad_tilt", "sad_edge", "sad_tracking", "sad_outliers", "sad_frame_errors", "sad_missing", "sad_unreadable"}),
     ("rigs", "Rigs", "bi-tools", {"no_rig"}),
-    ("ziele", "Ziele", "bi-flag", {"pointing", "foreign_lights", "no_version", "no_catalog_id", "many_rejected"}),
+    ("ziele", "Ziele", "bi-flag", {"pointing", "foreign_lights", "no_version", "no_catalog_id", "many_rejected",
+                                         "overlay_unmatched"}),
 ]
 SEVERITY = {"error": ("Fehler", "bi-x-octagon-fill", "danger"),
             "warning": ("Warnung", "bi-exclamation-triangle-fill", "warning"),
@@ -159,16 +161,34 @@ def _filter_options():
         filters.update((s.filters or {}).keys())
         if s.date:
             years.add(s.date.year)
+    named = [a.name for a in archives.configured(current_app.config) if a.name]
     return dict(cameras=sorted(cams), focals=sorted(focals), filters=sorted(filters),
-                years=sorted(years, reverse=True))
+                years=sorted(years, reverse=True), archives=named if len(named) > 1 else [])
+
+
+CATALOG_ARGS = ("q", "archive", "year", "camera", "focal", "filter", "sort", "rev")
+
+
+def _catalog_args() -> dict:
+    """Filters and sort order of the catalog: from the request when it has them (and then remembered in the
+    session cookie), else the remembered ones - so they stay when one leaves the catalog and comes back."""
+    if any(k in request.args for k in CATALOG_ARGS):
+        args = {k: request.args[k] for k in CATALOG_ARGS if request.args.get(k)}
+        if session.get("catalog") != args:
+            session["catalog"] = args
+        return args
+    return dict(session.get("catalog") or {})
 
 
 def _targets(args) -> list[Target]:
     targets = db.session.scalars(select(Target)).all()
     q = (args.get("q") or "").strip().lower()
     cam, focal, filt, year = args.get("camera"), args.get("focal"), args.get("filter"), args.get("year")
+    arch = args.get("archive")
     out = []
     for t in targets:
+        if arch and not any(f == arch or f.startswith(arch + "/") for f in t.folders or []):
+            continue                    # targets merged across archives count for each of them
         if q:
             hay = " ".join([t.name, t.common_name or "", t.object_type or "", t.constellation or "",
                             *t.catalog_ids, *t.folders]).lower()
@@ -197,6 +217,8 @@ def _targets(args) -> list[Target]:
         out.sort(key=lambda t: (t.last_night is None, -(t.last_night.toordinal() if t.last_night else 0)))
     else:
         out.sort(key=_sort_key_name)
+    if args.get("rev") == "1":          # "Sortieren nach" clicked: the other way round
+        out.reverse()
     return out
 
 
@@ -230,7 +252,10 @@ def _detail(t: Target) -> dict:
     versions = sorted([v for v in t.versions if v.thumb or v.is_video], key=lambda v: -v.mtime)
     broken = [v for v in t.versions if v.error]
     from webapp.main.phd_view import guiding_status
+    from webapp.archive.overlays import target_overlays
+    overlays, _ = target_overlays(current_app.config, t)
     return dict(
+        overlays=overlays,
         sad=sad_overview(), phd=guiding_status(), night=_night_status(), cal=_session_calibration(),
         notes=db.session.scalars(select(Note).where(Note.folder.in_([f for f in t.folders or []
                                                                     if f not in {s.root for s in sessions}]))).all(),
@@ -246,18 +271,19 @@ def _detail(t: Target) -> dict:
 
 @main.route("/")
 def index():
-    targets = _targets(request.args)
+    args = _catalog_args()
+    targets = _targets(args)
     sel = request.args.get("t", type=int)
     t = db.session.get(Target, sel) if sel else (targets[0] if targets else None)
     last = db.session.scalars(select(IndexRun).order_by(IndexRun.id.desc()).limit(1)).first()
     return render_template("index.html", targets=targets, selected=t, opts=_filter_options(),
-                           args=request.args, last_run=last, **(_detail(t) if t else {}))
+                           args=args, last_run=last, **(_detail(t) if t else {}))
 
 
 @main.route("/targets")
 def target_list():
     sel = request.args.get("t", type=int)
-    return render_template("_target_list.html", targets=_targets(request.args), selected_id=sel)
+    return render_template("_target_list.html", targets=_targets(_catalog_args()), selected_id=sel)
 
 
 @main.route("/target/<int:tid>")
@@ -269,9 +295,9 @@ def target(tid: int):
 
 
 def index_with(t: Target):
-    targets = _targets(request.args)
-    return render_template("index.html", targets=targets, selected=t, opts=_filter_options(),
-                           args=request.args, last_run=None, **_detail(t))
+    args = _catalog_args()
+    return render_template("index.html", targets=_targets(args), selected=t, opts=_filter_options(),
+                           args=args, last_run=None, **_detail(t))
 
 
 @main.post("/target/<int:tid>/cover/<int:vid>")
